@@ -1,0 +1,2814 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>StudyPDF — 강의 PDF 위에 필기하고 페이지마다 녹음하기</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+/* =====================================================================
+   디자인 토큰 — 시안 이미지 기준
+   ===================================================================== */
+:root{
+  --peach:#FDCBBE;       /* 상단 바, 새 노트 버튼 */
+  --peach-hover:#F9B9A8;
+  --peach-soft:#FFE7E0;
+  --slate:#6F778F;       /* 노트 카드 */
+  --slate-dark:#596078;
+  --ink:#111111;
+  --gray:#595959;        /* 제목 입력 안내문, 톱니바퀴 */
+  --rail:#EDEDED;        /* 필기·녹음 영역 배경 */
+  --line:#111111;        /* 구역 경계선 */
+  --white:#FFFFFF;
+  --live:#E2412F;        /* 녹음 중 */
+  --focus:#2F6FD0;
+
+  --font:"Pretendard",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--white);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+[hidden]{display:none!important}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+.screen{min-height:100%;display:flex;flex-direction:column}
+
+/* ── 공통 상단 바 ───────────────────────── */
+.topbar{
+  background:var(--peach);display:flex;align-items:center;gap:20px;
+  padding:12px 24px;min-height:96px;position:sticky;top:env(safe-area-inset-top,0px);z-index:30;
+}
+.spacer{flex:1}
+.gear{border:0;background:none;padding:6px;color:var(--gray);display:grid;place-items:center;border-radius:50%}
+.gear svg{width:46px;height:46px;transition:transform .35s}
+.gear:hover svg{transform:rotate(45deg)}
+
+/* 홈: 계정 */
+.account{border:0;background:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:2px;position:relative}
+.avatar{width:62px;height:62px;border-radius:50%;background:var(--slate);display:grid;place-items:center;overflow:hidden;color:#fff}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.avatar svg{width:34px;height:34px}
+.account-label{font-size:13px;font-weight:700;color:var(--gray)}
+.brand{font-size:28px;font-weight:800;letter-spacing:-.03em;margin-left:6px}
+.brand span{color:var(--slate)}
+
+.sortwrap{position:relative}
+.sortbtn{border:0;background:none;display:flex;align-items:center;gap:6px;font-size:22px;font-weight:700;padding:6px 8px;border-radius:8px}
+.sortbtn:hover{background:var(--peach-hover)}
+.sortbtn svg{width:26px;height:26px}
+.menu{
+  position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:2px solid var(--ink);
+  border-radius:12px;padding:6px;min-width:170px;box-shadow:0 10px 24px rgba(0,0,0,.14);z-index:40;
+}
+.menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:10px 12px;border-radius:8px;font-size:16px;font-weight:600}
+.menu button:hover{background:var(--peach-soft)}
+.menu button[aria-checked="true"]::after{content:"  ✓";color:var(--slate-dark)}
+.acct-menu{left:0;right:auto;top:calc(100% + 8px);min-width:240px}
+.acct-menu .who{padding:10px 12px 6px;font-size:13px;color:var(--gray);word-break:break-all}
+
+/* ── 홈 ─────────────────────────────────── */
+.home-main{flex:1;padding:48px 24px 140px}
+.grid{
+  max-width:1110px;margin:0 auto;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:56px 60px;
+}
+.card{position:relative}
+.card-open{display:block;width:100%;border:0;padding:0;background:none;text-align:left}
+.thumb{
+  aspect-ratio:1/1;background:var(--slate) center/contain no-repeat;
+  display:grid;place-items:center;color:#D9DCE6;font-weight:700;font-size:15px;
+  transition:background-color .15s, transform .15s;
+}
+.card-open:hover .thumb{background-color:var(--slate-dark);transform:translateY(-3px)}
+.cap{padding:12px 2px 0}
+.cap strong{display:block;font-size:18px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cap span{display:block;font-size:13px;color:var(--gray)}
+.card-del{
+  position:absolute;top:10px;right:10px;width:34px;height:34px;border-radius:50%;border:0;
+  background:rgba(255,255,255,.88);font-size:18px;font-weight:700;opacity:0;transition:opacity .15s;
+}
+.card:hover .card-del,.card-del:focus-visible{opacity:1}
+
+.empty-home{max-width:640px;margin:8vh auto 0;text-align:center}
+.empty-home h1{font-size:clamp(30px,4.4vw,46px);font-weight:800;letter-spacing:-.035em;line-height:1.22;margin:0 0 16px}
+.empty-home p{font-size:18px;color:var(--gray);margin:0 0 40px}
+
+.pill{
+  border:0;background:var(--peach);color:var(--ink);font-weight:800;border-radius:999px;
+  font-size:30px;letter-spacing:-.02em;padding:20px 44px;transition:background .15s, transform .15s;
+}
+.pill:hover{background:var(--peach-hover);transform:translateY(-1px)}
+.fab{position:fixed;right:28px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:25;box-shadow:0 8px 22px rgba(0,0,0,.18)}
+
+/* ── 편집 화면 ─────────────────────────── */
+.editor-bar{border-bottom:2px solid var(--line);gap:12px}
+.back{border:0;background:none;font-size:40px;line-height:1;padding:0 8px 6px;color:var(--gray);border-radius:8px}
+.back:hover{background:var(--peach-hover)}
+.title-input{
+  flex:1;min-width:0;border:0;background:transparent;font-size:clamp(24px,3vw,38px);
+  font-weight:800;letter-spacing:-.03em;padding:6px 4px;color:var(--ink);
+}
+.title-input::placeholder{color:var(--gray)}
+.title-input:focus{outline:none;border-bottom:2px dashed var(--gray)}
+.pdfbtn{border:0;background:none;padding:2px;border-radius:10px}
+.pdfbtn:hover{background:var(--peach-hover)}
+.pdfbtn svg{width:96px;height:72px;display:block}
+
+.zone-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.zone-head h2{font-size:26px;font-weight:800;letter-spacing:-.03em;margin:0}
+.zone-head h2 small{font-size:15px;color:var(--gray);font-weight:700;margin-left:6px}
+
+.colorbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+.sw{width:26px;height:26px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #BDBDBD;padding:0}
+.sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
+.sw-custom{position:relative;width:26px;height:26px;border-radius:50%;overflow:hidden;box-shadow:0 0 0 1px #BDBDBD;
+  background:conic-gradient(#f44,#fc3,#5d5,#3cf,#46f,#c4f,#f44)}
+.sw-custom input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.boldbtn{border:1px solid #BDBDBD;background:#fff;border-radius:6px;font-weight:900;width:30px;height:28px;padding:0}
+
+.notes-wrap{position:relative;flex:1;min-height:120px;display:flex}
+.notes{
+  flex:1;overflow:auto;background:#fff;border:1px solid #CFCFCF;border-radius:8px;
+  padding:12px 14px;font-size:15px;line-height:1.75;outline:none;white-space:pre-wrap;word-break:break-word;
+}
+.notes:focus{border-color:var(--ink)}
+.notes[contenteditable="false"]{background:#F7F7F7;color:var(--gray)}
+.notes:empty::before{content:attr(data-placeholder);color:#9A9A9A}
+.jump-mark{
+  position:absolute;left:8px;right:8px;height:26px;border-left:4px solid var(--live);
+  background:rgba(253,203,190,.55);pointer-events:none;border-radius:2px;
+  animation:fadeMark 1.8s ease-out forwards;
+}
+@keyframes fadeMark{0%,55%{opacity:1}100%{opacity:0}}
+
+.recbtn{border:0;background:var(--peach);border-radius:999px;padding:9px 18px;font-weight:800;font-size:15px;white-space:nowrap}
+.recbtn:hover:not(:disabled){background:var(--peach-hover)}
+.recbtn.live{background:var(--live);color:#fff}
+.recbtn:disabled{opacity:.4;cursor:not-allowed}
+.rec-state{font-size:15px;font-weight:700;padding:6px 0 0}
+.rec-state.live{color:var(--live)}
+.rec-state.live::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--live);margin-right:7px;vertical-align:1px;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+.rec-sub{font-size:13px;color:var(--gray);min-height:1.5em;margin-bottom:8px}
+.seglist{list-style:none;margin:0;padding:0;overflow:auto;flex:1;display:flex;flex-direction:column;gap:8px}
+.seg{display:flex;align-items:stretch;background:#fff;border:1px solid #CFCFCF;border-radius:10px;overflow:hidden}
+.seg.playing{border-color:var(--ink);box-shadow:inset 4px 0 0 var(--live)}
+.seg-main{flex:1;border:0;background:none;text-align:left;padding:9px 12px;display:grid;grid-template-columns:auto 1fr auto;gap:2px 10px;align-items:center}
+.seg-main:hover{background:var(--peach-soft)}
+.seg-icon{grid-row:span 2;width:30px;height:30px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:12px}
+.seg-main b{font-size:15px}
+.seg-main .t{font-size:12.5px;color:var(--gray);grid-column:2}
+.seg-main .d{grid-row:1 / span 2;grid-column:3;font-weight:800;font-variant-numeric:tabular-nums}
+.seg-main .m{grid-column:2;font-size:12px;color:var(--slate-dark);font-weight:600}
+.seg-del{border:0;border-left:1px solid #E3E3E3;background:none;width:38px;font-size:17px;color:var(--gray)}
+.seg-del:hover{background:#FFE5E1;color:var(--live)}
+.seg-empty{font-size:14px;color:var(--gray)}
+
+.save-zone{border-top:2px solid var(--line);padding:14px 20px;background:#F6F6F6;display:flex;flex-direction:column;gap:9px}
+.acct-row{display:flex;align-items:center;gap:9px;font-size:13.5px;min-height:30px}
+.acct-row .mini{width:26px;height:26px;border-radius:50%;background:var(--slate);overflow:hidden;flex:none}
+.acct-row .mini img{width:100%;height:100%;object-fit:cover}
+.acct-row .email{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.linkbtn{border:0;background:none;text-decoration:underline;color:var(--gray);padding:2px 4px;font-size:13px}
+.gbtn{display:flex;align-items:center;gap:9px;border:1px solid #BDBDBD;background:#fff;border-radius:999px;padding:6px 14px;font-weight:700;font-size:14px}
+.gbtn svg{width:18px;height:18px}
+.where{font-size:13px;color:var(--gray)}
+.where b{color:var(--ink)}
+.savebtn{border:0;background:var(--ink);color:#fff;border-radius:999px;padding:11px;font-weight:800;font-size:16px}
+.savebtn:disabled{opacity:.35;cursor:not-allowed}
+.save-log{font-size:13px;color:var(--gray);min-height:1.4em}
+/* ── 대화상자 ─────────────────────────── */
+dialog{border:0;padding:0;border-radius:20px;max-width:min(560px,calc(100vw - 32px));width:100%;box-shadow:0 24px 60px rgba(0,0,0,.28)}
+dialog::backdrop{background:rgba(20,20,30,.42)}
+.dlg-head{background:var(--peach);padding:20px 24px;display:flex;align-items:center;justify-content:space-between}
+.dlg-head h2{margin:0;font-size:24px;font-weight:800;letter-spacing:-.03em}
+.xbtn{border:0;background:none;font-size:28px;line-height:1;color:var(--gray);padding:2px 8px;border-radius:8px}
+.xbtn:hover{background:var(--peach-hover)}
+.dlg-body{padding:22px 24px 26px;display:flex;flex-direction:column;gap:18px;max-height:min(70vh,640px);overflow:auto}
+.choices{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.choice{border:2px solid var(--ink);background:#fff;border-radius:14px;padding:18px 16px;text-align:left;display:flex;flex-direction:column;gap:6px}
+.choice:hover{background:var(--peach-soft)}
+.choice .ic{font-size:30px;line-height:1}
+.choice b{font-size:18px}
+.choice small{font-size:13px;color:var(--gray);line-height:1.4}
+.drive-row{display:flex;gap:8px;align-items:center;background:var(--peach-soft);border-radius:12px;padding:12px}
+.drive-row input{flex:1;min-width:0;border:1px solid #BDBDBD;border-radius:8px;padding:9px 11px;background:#fff}
+.drive-row button{border:0;background:var(--ink);color:#fff;border-radius:8px;padding:9px 14px;font-weight:700;white-space:nowrap}
+.sub-h{font-size:16px;font-weight:800;margin:4px 0 -6px}
+.recent{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.recent button{width:100%;display:flex;align-items:center;gap:12px;border:1px solid #DADADA;background:#fff;border-radius:10px;padding:10px 12px;text-align:left}
+.recent button:hover{border-color:var(--ink);background:var(--peach-soft)}
+.recent .ic{font-size:20px;width:24px;text-align:center}
+.recent .nm{flex:1;min-width:0}
+.recent .nm b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recent .nm span{font-size:12.5px;color:var(--gray)}
+.recent .when{font-size:12.5px;color:var(--gray);white-space:nowrap}
+.note-hint{font-size:13px;color:var(--gray);margin:0}
+
+/* 설정: 오른쪽에서 밀려 나오는 패널 */
+dialog.sheet{margin:0 0 0 auto;height:100%;max-height:100%;max-width:min(420px,100vw);border-radius:0;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+dialog.sheet[open]{animation:slideIn .22s ease-out}
+@keyframes slideIn{from{transform:translateX(40px);opacity:0}}
+.opt{border:1px solid #DADADA;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.check{display:flex;gap:11px;align-items:flex-start;font-weight:700;font-size:16px;cursor:pointer}
+.check input{width:20px;height:20px;margin:2px 0 0;accent-color:var(--ink);flex:none}
+.check.off{opacity:.4;cursor:not-allowed}
+.range-row{display:flex;align-items:center;gap:12px;padding-left:31px}
+.range-row input{flex:1;accent-color:var(--live)}
+.range-row output{font-weight:800;font-variant-numeric:tabular-nums;min-width:38px;text-align:right}
+.opt p{margin:0 0 0 31px;font-size:13px;color:var(--gray)}
+
+.toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:#fff;padding:12px 20px;border-radius:999px;font-weight:600;font-size:14px;z-index:100;
+  max-width:calc(100vw - 32px);text-align:center;animation:toastIn .2s ease-out}
+@keyframes toastIn{from{transform:translate(-50%,10px);opacity:0}}
+
+/* =====================================================================
+   편집 화면 (2차 개편)
+   ===================================================================== */
+#editor.screen{height:100vh;height:100dvh;min-height:0;overflow:hidden}
+/* 위쪽 바: 접으면 얇은 한 줄(화살표)만 남고, 펼치면 그 바가 아래로 늘어남 */
+.edtop{flex:none;position:relative;z-index:30;background:var(--peach);border-bottom:2px solid var(--line)}
+.edtop-clip{display:grid;grid-template-rows:1fr;transition:grid-template-rows .24s ease}
+.edtop.folded .edtop-clip{grid-template-rows:0fr}
+.edtop-inner{min-height:0;overflow:hidden}
+.edtop .editor-bar{position:relative;top:auto;border-bottom:0;min-height:84px;padding:8px 20px;
+  opacity:1;visibility:visible;transition:opacity .2s .04s ease,visibility 0s}
+.edtop.folded .editor-bar{opacity:0;visibility:hidden;transition:opacity .16s ease,visibility 0s linear .24s}
+.fold{display:flex;align-items:center;justify-content:center;width:100%;height:22px;border:0;
+  background:transparent;color:var(--gray);font-size:15px;line-height:1;padding:0}
+.fold:hover{background:var(--peach-hover)}
+
+.workspace{flex:1;display:flex;min-height:0;min-width:0}
+
+/* 경계선: 폭이 0인 막대 + 넓은 손잡이 영역. 끌어서 크기 조절 */
+.split{position:relative;flex:none;width:0;z-index:6;touch-action:none}
+.split::before{content:"";position:absolute;top:0;bottom:0;left:-5px;width:11px;cursor:col-resize}
+.split:hover::before,.split.drag::before{background:rgba(226,65,47,.35)}
+.split.h{width:auto;height:0}
+.split.h::before{top:-5px;bottom:auto;left:0;right:0;width:auto;height:11px;cursor:row-resize}
+
+/* 왼쪽: 녹음 구간 목록 (녹음 패널을 펼쳤을 때만) */
+.segcol{width:var(--segw,190px);flex:none;background:var(--rail);border-right:2px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.segcol h3{margin:0;padding:10px 12px 6px;font-size:15px;font-weight:800}
+.segall{list-style:none;margin:0;padding:0;overflow:auto;flex:1}
+.sa{border-top:1px solid #CFCFCF;display:flex;align-items:stretch}
+.sa.sel{background:var(--peach)}
+.sa.playing{box-shadow:inset 4px 0 0 var(--live)}
+.sa-main{flex:1;min-width:0;border:0;background:none;text-align:left;padding:8px 6px 8px 12px}
+.sa-main:hover{background:rgba(253,203,190,.45)}
+.sa-main b{display:block;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sa-main span{display:block;font-size:12.5px;color:var(--gray);font-variant-numeric:tabular-nums}
+.sa-btn{border:0;background:none;width:26px;color:var(--gray);font-size:13px;padding:0}
+.sa-btn:hover{color:var(--live)}
+.sa-empty{padding:12px;font-size:13px;color:var(--gray)}
+.sa-grp{padding:6px 12px;font-size:12px;font-weight:800;color:var(--slate-dark);background:#E2E2E2;border-top:1px solid #CFCFCF}
+
+/* 가운데: PDF */
+.pdf-pane{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;position:relative}
+.pdf-pane.drag{background:var(--peach-soft)}
+.pdf-empty{margin:auto;text-align:center;padding:40px 16px}
+.pdf-empty h2{font-size:clamp(34px,5vw,64px);font-weight:800;letter-spacing:-.04em;margin:0 0 10px}
+.pdf-empty p{font-size:17px;color:var(--gray);margin:0 0 28px}
+.pdf-empty .pill{font-size:22px;padding:15px 34px}
+.pdf-stage{flex:1;min-height:0;position:relative;display:flex}
+.pdf-view{flex:1;min-width:0;min-height:0;display:flex;align-items:center;justify-content:center;padding:12px;overflow:hidden}
+#pdfCanvas{display:block;border:1px solid #D7D7D7;box-shadow:0 4px 16px rgba(0,0,0,.08);background:#fff}
+.scroll-view{flex:1;min-width:0;overflow:auto;padding:12px 0 60px;display:flex;flex-direction:column;align-items:center;gap:14px;background:#F2F2F2;position:relative}
+.pg{position:relative;flex:none;background:#fff;border:1px solid #D7D7D7;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.pg canvas{display:block}
+.pg .pgno{position:absolute;left:8px;top:6px;font-size:12px;font-weight:700;color:var(--gray);background:rgba(255,255,255,.85);padding:1px 7px;border-radius:999px}
+.pg-ins{position:absolute;left:50%;bottom:-13px;transform:translateX(-50%);z-index:2;border:1px dashed var(--gray);background:#fff;
+  border-radius:999px;padding:2px 12px;font-size:12px;font-weight:700;color:var(--gray);opacity:0;transition:opacity .15s}
+.pg:hover .pg-ins,.pg-ins:focus-visible{opacity:1}
+.live-cap{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);max-width:min(92%,860px);z-index:8;pointer-events:none;
+  background:rgba(17,17,17,.84);color:#fff;padding:8px 18px;border-radius:12px;font-size:19px;font-weight:600;line-height:1.4;text-align:center}
+.live-cap i{font-style:normal;opacity:.6}
+
+.navbar{flex:none;border-top:1px solid #DDD;padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;align-items:center;background:#fff}
+.navrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center}
+#prevBtn,#nextBtn{border:2px solid var(--ink);background:#fff;border-radius:999px;padding:5px 16px;font-weight:700}
+#prevBtn:disabled,#nextBtn:disabled{opacity:.3;cursor:not-allowed}
+.pageno{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;min-width:96px;text-align:center;cursor:text;border-bottom:2px dashed transparent}
+.pageno:hover{border-bottom-color:var(--gray)}
+.jump-in{width:76px;font-size:17px;font-weight:800;text-align:center;border:2px solid var(--ink);border-radius:8px;padding:2px 4px;font-variant-numeric:tabular-nums}
+.vt{display:inline-flex}
+.vt button{border:1px solid var(--ink);background:#fff;padding:5px 12px;font-weight:700;font-size:13px}
+.vt button:first-child{border-radius:999px 0 0 999px}
+.vt button:last-child{border-radius:0 999px 999px 0;border-left:0}
+.vt button[aria-pressed="true"]{background:var(--ink);color:#fff}
+.tbtn{border:1px solid #BDBDBD;background:#fff;border-radius:999px;padding:5px 12px;font-weight:700;font-size:13px;white-space:nowrap}
+.tbtn:hover:not(:disabled){border-color:var(--ink)}
+.tbtn[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.tbtn:disabled{opacity:.4;cursor:not-allowed}
+.blankwrap{position:relative}
+.menu.up{top:auto;bottom:calc(100% + 6px);right:0;min-width:230px}
+.strip{display:flex;align-items:center;justify-content:center;flex-wrap:nowrap;max-width:100%;overflow:hidden}
+.chip{flex:none;min-width:30px;height:30px;border:1px solid #C9C9C9;background:#fff;font-size:12px;font-weight:600;padding:0 4px;font-variant-numeric:tabular-nums;border-radius:6px}
+.chip[data-has="1"]{background:var(--peach);border-color:var(--peach-hover)}
+.chip[data-blank="1"]{border-style:dashed}
+.chip.cur{display:inline-grid;place-items:center;border:2px solid var(--ink);font-weight:800;cursor:text;background:#fff}
+.chip.cur[data-has="1"]{background:var(--peach)}
+.chip.cur .jump-in{width:60px;font-size:13px;padding:0 2px}
+.chip.nav{background:#F3F3F3}
+.ins{flex:none;width:14px;height:30px;border:0;background:none;color:#8A8A8A;font-size:14px;padding:0;opacity:.45;line-height:1}
+.ins:hover,.ins:focus-visible{opacity:1;background:var(--peach-soft);color:var(--ink)}
+
+/* 오른쪽: 필기 · 자막 · 녹음 */
+.rail{width:var(--railw,380px);flex:none;background:var(--rail);border-left:2px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
+.zone{display:flex;flex-direction:column;min-height:0;padding:14px 16px}
+.notes-zone{flex:1}
+.notes-zone .zone-head h2{font-size:22px}
+.cap-zone{flex:none;height:var(--caph,120px);border-top:2px solid var(--line);padding:8px 14px;display:flex;flex-direction:column;min-height:0;background:#F7F7F7}
+.cap-zone.off{display:none}
+.cap-head{display:flex;align-items:center;justify-content:space-between;font-size:14px;margin-bottom:4px}
+.cap-head small{color:var(--gray);font-weight:700;margin-left:4px}
+.caplist{list-style:none;margin:0;padding:0;overflow:auto;flex:1;font-size:14px;line-height:1.5}
+.caplist li{display:flex;gap:8px;padding:2px 0;border-bottom:1px dotted #D5D5D5}
+.caplist .ct{flex:none;font-size:12px;color:var(--slate-dark);font-weight:700;font-variant-numeric:tabular-nums;border:0;background:none;padding:2px 0;min-width:44px;text-align:left}
+.caplist button.ct{cursor:pointer;text-decoration:underline dotted}
+.caplist .tx{flex:1;min-width:0;word-break:break-word}
+.caplist .cx{border:0;background:none;color:var(--gray);padding:0 4px}
+.cap-none{color:var(--gray);font-size:13px}
+
+.rec-zone{flex:none;height:48px;border-top:2px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--rail);overflow:hidden;transition:height .24s ease}
+.rec-zone.open{height:var(--rech,320px)}
+.resizing *{transition:none!important}
+.rec-bar{flex:none;display:flex;align-items:center;gap:8px;padding:5px 10px;min-height:46px}
+.rec-bar .gear{padding:2px}
+.rec-bar .gear svg{width:28px;height:28px}
+.rec-line{flex:1;min-width:0;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.rec-line.live{color:var(--live)}
+.rec-bar .recbtn{padding:7px 12px;font-size:14px}
+.foldbtn{border:0;background:none;font-size:18px;width:30px;height:30px;color:var(--gray);border-radius:8px;padding:0;flex:none}
+.foldbtn:hover{background:var(--peach-hover)}
+.rec-body{flex:1;min-height:0;overflow:auto;padding:2px 16px 14px;display:flex;flex-direction:column;gap:10px;visibility:hidden;transition:visibility 0s linear .24s}
+.rec-zone.open .rec-body{visibility:visible;transition:visibility 0s}
+.rec-body .sub-h{margin:6px 0 -4px;font-size:15px}
+.rec-body .sub-h small{color:var(--gray);margin-left:4px}
+.rec-body .seglist{flex:none;overflow:visible}
+.seg-edit{border:0;border-left:1px solid #E3E3E3;background:none;width:34px;font-size:14px;color:var(--gray)}
+.seg-edit:hover{background:var(--peach-soft);color:var(--ink)}
+.cc-box{background:#fff;border:1px solid #CFCFCF;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.cc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13.5px}
+.cc-row b{min-width:62px}
+.cc-hint{margin:0;font-size:12px;color:var(--gray);line-height:1.45}
+.rec-body .save-zone{border:1px solid #CFCFCF;border-radius:12px;padding:12px}
+
+/* 아래: 전체 녹음 타임라인 */
+.timeline{flex:none;display:flex;align-items:center;gap:14px;padding:8px 16px calc(8px + env(safe-area-inset-bottom,0px));border-top:2px solid var(--line);background:#fff}
+.tl-play{width:40px;height:40px;border:0;background:none;font-size:30px;line-height:1;flex:none;padding:0;border-radius:50%}
+.tl-play:hover{background:var(--peach-soft)}
+.tl-track{position:relative;flex:1;height:44px;touch-action:none}
+.tl-rail{position:absolute;left:0;right:0;top:18px;height:8px;background:var(--peach-soft);border:1px solid #E5C9C0;border-radius:4px}
+.tl-blk{position:absolute;top:18px;height:8px;background:#EBC3B7;border-right:2px solid #fff;cursor:pointer;padding:0;border-top:0;border-bottom:0;border-left:0;min-width:2px}
+.tl-blk:nth-of-type(even){background:#E3B3A5}
+.tl-blk.sel{background:#F2A28C}
+.tl-win{position:absolute;top:18px;height:8px;background:var(--ink);pointer-events:none}
+.tl-head{position:absolute;top:8px;width:2px;height:28px;margin-left:-1px;background:var(--live);display:none;pointer-events:none;z-index:2}
+.tl-h{position:absolute;top:9px;width:26px;height:26px;margin-left:-13px;border-radius:50%;background:#EDEDED;border:2px solid var(--ink);cursor:ew-resize;touch-action:none;z-index:3;padding:0}
+.tl-h:focus-visible{outline:3px solid var(--focus)}
+.tl-time{flex:none;min-width:150px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;font-weight:700}
+.tl-time small{display:block;font-weight:600;color:var(--gray)}
+
+@media (max-width:900px){
+  #editor.screen{height:auto;min-height:100vh;overflow:visible}
+  .workspace{flex-direction:column}
+  .split{display:none}
+  .segcol{width:auto;max-height:200px;border-right:0;border-bottom:2px solid var(--line)}
+  .pdf-pane{min-height:60vh}
+  .rail{width:auto;border-left:0;border-top:2px solid var(--line);min-height:460px}
+  .rec-zone.open{height:380px}
+  .timeline{flex-wrap:wrap}
+  .topbar{min-height:76px;padding:10px 14px;gap:10px}
+  .brand{font-size:22px}
+  .sortbtn{font-size:16px}
+  .gear svg{width:36px;height:36px}
+  .avatar{width:48px;height:48px}
+  .pdfbtn svg{width:72px;height:54px}
+  .pill{font-size:22px;padding:15px 30px}
+  .choices{grid-template-columns:1fr}
+}
+
+/* =====================================================================
+   홈 화면 (2차 개편): 왼쪽 폴더 트리 + 노트 카드 + 휴지통
+   ===================================================================== */
+#home.screen{min-height:100vh}
+.home-body{flex:1;display:flex;min-height:0;align-items:stretch}
+.home-body .home-main{flex:1;min-width:0}
+.gear{position:relative}
+.badge{position:absolute;top:0;right:-2px;min-width:20px;height:20px;border-radius:999px;background:var(--live);color:#fff;
+  font-size:12px;font-weight:800;display:grid;place-items:center;padding:0 5px}
+
+/* 폴더 트리 */
+.tree{width:270px;flex:none;background:var(--rail);border-right:2px solid var(--line);display:flex;flex-direction:column}
+.tree-src{padding:12px 16px 14px;display:flex;flex-direction:column;gap:9px;border-bottom:2px solid var(--line)}
+.srcrow{display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:17px;color:var(--gray);cursor:pointer}
+.sw-t{position:relative;flex:none;width:52px;height:28px;border:0;border-radius:999px;background:#C9C9C9;padding:0}
+.sw-t::after{content:"";position:absolute;top:4px;left:4px;width:20px;height:20px;border-radius:50%;background:var(--live);transition:transform .15s,background .15s}
+.sw-t[aria-checked="true"]::after{transform:translateX(24px);background:#7DBB3E}
+.tree-list,.tn-kids{list-style:none;margin:0;padding:0}
+.tree-list{flex:1;overflow:auto}
+.tn-row{display:flex;align-items:center;min-height:46px;padding-left:calc(8px + var(--d,0) * 18px);background:#EDEDED;border-bottom:1px solid #C9C9C9}
+.tn-row.on{background:var(--peach)}
+.tn-row.cur{box-shadow:inset 5px 0 0 var(--ink)}
+.tn-arrow{flex:none;border:0;background:none;width:26px;height:28px;color:var(--gray);padding:0;font-size:13px}
+.tn-arrow:disabled{visibility:hidden}
+.tn-name{flex:1;min-width:0;border:0;background:none;text-align:left;padding:10px 6px;font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.tn-name .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tn-name svg{flex:none}
+.tn-cnt{flex:none;font-size:12px;color:var(--gray);font-variant-numeric:tabular-nums;padding:0 6px}
+.tn-act{display:none;flex:none;padding-right:4px}
+.tn-row:hover .tn-act,.tn-row:focus-within .tn-act{display:flex}
+.tn-row:hover .tn-cnt,.tn-row:focus-within .tn-cnt{display:none}
+.tn-act button{border:0;background:none;width:27px;height:30px;color:var(--gray);padding:0;font-size:15px;border-radius:6px}
+.tn-act button:hover{background:rgba(0,0,0,.08);color:var(--ink)}
+.tree-add{border:0;border-top:2px solid var(--line);background:#E4E4E4;padding:13px 16px;text-align:left;font-weight:800;font-size:15px;color:var(--gray)}
+.tree-add:hover{background:var(--peach-soft);color:var(--ink)}
+.tree-note{padding:14px 16px;font-size:13px;color:var(--gray);line-height:1.5}
+
+/* 카드 · 빈 상태 · 새 노트 버튼 */
+.card-del,.card-mv{position:absolute;top:10px;width:34px;height:34px;border-radius:50%;border:0;background:rgba(255,255,255,.88);
+  font-size:17px;font-weight:700;opacity:0;transition:opacity .15s;padding:0}
+.card-del{right:10px}
+.card-mv{right:52px}
+.card:hover .card-del,.card:hover .card-mv,.card-del:focus-visible,.card-mv:focus-visible{opacity:1}
+.empty-folder{max-width:520px;margin:10vh auto 0;text-align:center;color:var(--gray);font-size:18px;line-height:1.6}
+.empty-folder b{display:block;color:var(--ink);font-size:24px;font-weight:800;margin-bottom:6px}
+.fab-wrap{position:fixed;right:28px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:25;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.fab-wrap .fab{position:static}
+.fab-where{max-width:min(420px,calc(100vw - 56px));background:#fff;border:2px solid var(--ink);border-radius:999px;padding:5px 14px;font-size:13px;font-weight:700;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.12)}
+
+/* 휴지통 */
+.trash-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.tr-item{border:1px solid #DADADA;border-radius:14px;padding:12px;display:grid;grid-template-columns:54px 1fr;gap:4px 12px;align-items:center}
+.tr-th{grid-row:span 2;width:54px;height:54px;border-radius:8px;background:var(--slate) center/contain no-repeat}
+.tr-item b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px}
+.tr-item small{display:block;font-size:12.5px;color:var(--gray);line-height:1.45}
+.tr-btns{grid-column:2;display:flex;gap:8px;flex-wrap:wrap}
+.tr-btns .tbtn.danger:hover{border-color:var(--live);color:var(--live)}
+.tr-empty{font-size:15px;color:var(--gray);text-align:center;padding:26px 8px}
+
+@media (hover:none){
+  .tn-act{display:flex}
+  .tn-row:hover .tn-cnt{display:block}
+  .card-del,.card-mv{opacity:1}
+}
+@media (max-width:900px){
+  .home-body{flex-direction:column}
+  .tree{width:auto;border-right:0;border-bottom:2px solid var(--line);max-height:340px}
+  .tree-list{min-height:150px}
+  .sortbtn{white-space:nowrap;font-size:14px}
+  .home-main{padding:28px 16px 150px}
+  .fab-wrap{right:16px}
+}
+</style>
+</head>
+<body>
+
+<!-- 아이콘 묶음 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-gear" viewBox="0 0 24 24"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.47.47 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M7 3v18M3 17l4 4 4-4M17 21V3M13 7l4-4 4 4"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><path fill="currentColor" d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zm0 2c-4.4 0-8 2.3-8 5.2V21h16v-1.8c0-2.9-3.6-5.2-8-5.2z"/></symbol>
+  <symbol id="i-g" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2A11.9 11.9 0 0 1 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3a12 12 0 0 1-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></symbol>
+</svg>
+
+<!-- =====================================================================
+     화면 1. 홈 — 왼쪽 폴더 트리 + 노트 카드
+     ===================================================================== -->
+<section id="home" class="screen">
+  <header class="topbar">
+    <div style="position:relative">
+      <button class="account" id="accountBtn" aria-haspopup="menu">
+        <span class="avatar" id="avatar"><svg><use href="#i-user"/></svg></span>
+        <span class="account-label" id="accountLabel">로그인</span>
+      </button>
+      <div class="menu acct-menu" id="acctMenu" role="menu" hidden>
+        <div class="who" id="acctWho"></div>
+        <button role="menuitem" id="logoutBtn">로그아웃</button>
+      </div>
+    </div>
+    <div class="brand">Study<span>PDF</span></div>
+    <div class="spacer"></div>
+    <div class="sortwrap">
+      <button class="sortbtn" id="sortBtn" aria-haspopup="menu">
+        <svg><use href="#i-sort"/></svg>정렬방식: <span id="sortLabel">생성순</span>
+      </button>
+      <div class="menu" id="sortMenu" role="menu" hidden>
+        <button role="menuitemradio" data-sort="created">생성순</button>
+        <button role="menuitemradio" data-sort="updated">수정순</button>
+        <button role="menuitemradio" data-sort="title">이름순 (가나다·ABC)</button>
+      </div>
+    </div>
+    <button class="gear" id="trashBtn" aria-label="휴지통" title="휴지통"><svg><use href="#i-gear"/></svg><span class="badge" id="trashBadge" hidden>0</span></button>
+  </header>
+
+  <div class="home-body">
+    <aside class="tree" id="tree" aria-label="폴더">
+      <div class="tree-src">
+        <div class="srcrow"><span id="lblDrive">G drive</span><button class="sw-t" id="srcDrive" role="switch" aria-checked="true" aria-labelledby="lblDrive"></button></div>
+        <div class="srcrow"><span id="lblLocal">내 컴퓨터</span><button class="sw-t" id="srcLocal" role="switch" aria-checked="true" aria-labelledby="lblLocal"></button></div>
+      </div>
+      <ul class="tree-list" id="treeList"></ul>
+      <button class="tree-add" id="addRoot">＋ 저장 위치 추가</button>
+    </aside>
+
+    <main class="home-main">
+      <!-- 노트가 하나도 없을 때 -->
+      <div class="empty-home" id="emptyHome" hidden>
+        <h1>강의 PDF 위에 필기하고,<br>페이지마다 설명을 녹음하세요</h1>
+        <p>슬라이드를 넘기면 녹음도 그 페이지에 맞춰 나뉩니다. 복습할 때 녹음을 누르면 그때 쓰던 필기로 바로 돌아갑니다.</p>
+        <button class="pill" data-new-note>+ 새 노트 만들기</button>
+      </div>
+      <!-- 고른 폴더에 노트가 없을 때 -->
+      <div class="empty-folder" id="emptyFolder" hidden></div>
+      <div class="grid" id="grid"></div>
+    </main>
+  </div>
+
+  <div class="fab-wrap" id="fabWrap" hidden>
+    <span class="fab-where" id="fabWhere" hidden></span>
+    <button class="pill fab" id="fab" data-new-note>+ 새 노트 만들기</button>
+  </div>
+</section>
+
+<!-- =====================================================================
+     화면 2. 노트 편집 (시안: 접히는 상·하단, 구간 목록, 하단 타임라인)
+     ===================================================================== -->
+<section id="editor" class="screen" hidden>
+  <div class="edtop" id="edTop">
+    <div class="edtop-clip"><div class="edtop-inner">
+  <header class="topbar editor-bar" id="edBar">
+    <button class="back" id="backBtn" aria-label="홈으로">‹</button>
+    <input class="title-input" id="titleInput" placeholder="노트 제목을 입력하세요" autocomplete="off">
+    <input type="file" id="pdfFile" accept="application/pdf" hidden>
+    <button class="pdfbtn" id="pdfBtn" aria-label="PDF 불러오기">
+      <svg viewBox="0 0 96 72"><g fill="none" stroke="#111" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M8 4h28l14 14v30"/><path d="M36 4v14h14"/><path d="M8 4v56c0 4 2 6 6 6h10"/>
+        <path d="M18 26h14M18 34h22M18 42h12"/></g>
+        <text x="26" y="66" font-family="Pretendard,sans-serif" font-size="22" font-weight="800" fill="#111">+PDF</text></svg>
+    </button>
+  </header>
+    </div></div>
+    <button class="fold" id="topFold" aria-label="제목·PDF 메뉴 접기/펼치기" aria-expanded="true">⌃</button>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <!-- 왼쪽: 녹음 구간 (녹음 패널을 펼쳤을 때) -->
+    <aside class="segcol" id="segCol" hidden>
+      <h3>녹음 구간</h3>
+      <ul class="segall" id="segAll"></ul>
+    </aside>
+    <div class="split" id="splitL" hidden></div>
+
+    <!-- 가운데: PDF -->
+    <section class="pdf-pane" id="pdfPane">
+      <div class="pdf-empty" id="pdfEmpty">
+        <h2>강의 PDF를 불러오세요</h2>
+        <p>위쪽 +PDF를 누르거나, 파일을 여기로 끌어다 놓으세요.</p>
+        <button class="pill" id="pdfBtn2">PDF 불러오기</button>
+      </div>
+      <div class="pdf-stage" id="pdfStage" hidden>
+        <div class="pdf-view" id="pdfView"><canvas id="pdfCanvas"></canvas></div>
+        <div class="scroll-view" id="scrollView" hidden></div>
+        <div class="live-cap" id="liveCap" hidden></div>
+      </div>
+      <nav class="navbar" id="navbar" hidden>
+        <div class="navrow">
+          <button id="prevBtn">이전</button>
+          <span class="pageno" id="pageNo" role="button" tabindex="0" title="눌러서 쪽 번호를 입력하면 그 쪽으로 이동">1 / 1</span>
+          <button id="nextBtn">다음</button>
+          <span class="vt" role="group" aria-label="보기 방식">
+            <button id="viewPage" aria-pressed="true">쪽 넘기기</button>
+            <button id="viewScroll" aria-pressed="false">스크롤</button>
+          </span>
+          <span class="blankwrap">
+            <button class="tbtn" id="blankBtn" aria-haspopup="menu">＋ 빈 페이지</button>
+            <div class="menu up" id="blankMenu" role="menu" hidden>
+              <button role="menuitem" data-blank="before">현재 쪽 앞에 추가</button>
+              <button role="menuitem" data-blank="after">현재 쪽 뒤에 추가</button>
+              <button role="menuitem" data-blank="at">쪽 번호를 입력해 그 뒤에 추가</button>
+              <button role="menuitem" data-blank="del" id="blankDel" hidden>이 빈 페이지 삭제</button>
+            </div>
+          </span>
+        </div>
+        <div class="strip" id="strip" aria-label="페이지 목록 (색칠된 페이지에 녹음이 있고, 점선은 빈 페이지입니다)"></div>
+      </nav>
+    </section>
+    <div class="split" id="splitR" title="끌어서 PDF·필기 영역 크기 조절"></div>
+
+    <!-- 오른쪽: 필기 · 자막 · 녹음 -->
+    <aside class="rail" id="rail">
+      <section class="zone notes-zone">
+        <div class="zone-head"><h2>필기<small id="notesPage"></small></h2></div>
+        <div class="colorbar" id="colorbar" aria-label="글자 색">
+          <button class="boldbtn" id="boldBtn" aria-label="굵게" aria-pressed="false">B</button>
+          <label class="sw-custom" title="다른 색 고르기"><input type="color" id="customColor" value="#e2412f" aria-label="다른 색 고르기"></label>
+        </div>
+        <div class="notes-wrap" id="notesWrap">
+          <div class="notes" id="notes" contenteditable="false" spellcheck="false"
+               data-placeholder="PDF를 불러오면 페이지마다 따로 필기할 수 있습니다."></div>
+        </div>
+      </section>
+
+      <div class="split h" id="splitC" hidden></div>
+      <section class="cap-zone off" id="capZone" aria-label="이 페이지 자막">
+        <div class="cap-head"><b>자막<small id="capPage"></small></b><button class="linkbtn" id="capClear">이 쪽 자막 지우기</button></div>
+        <ul class="caplist" id="capList"></ul>
+      </section>
+
+      <div class="split h" id="splitB" hidden></div>
+      <section class="rec-zone" id="recZone">
+        <div class="rec-bar">
+          <button class="gear" data-open-settings aria-label="녹음 설정"><svg><use href="#i-gear"/></svg></button>
+          <div class="rec-line" id="recLine">녹음 꺼짐</div>
+          <button class="recbtn" id="recBtn" disabled>● 녹음</button>
+          <button class="tbtn" id="saveMini">저장</button>
+          <button class="foldbtn" id="recToggle" aria-expanded="false" aria-label="녹음 패널 펼치기">⌃</button>
+        </div>
+        <div class="rec-body" id="recBody">
+          <div class="rec-state" id="recState">녹음이 꺼져 있습니다</div>
+          <div class="rec-sub" id="recSub"></div>
+
+          <div class="cc-box">
+            <div class="cc-row"><b>실시간 자막</b>
+              <button class="tbtn" id="capOn" aria-pressed="false">음성 인식 꺼짐</button>
+              <button class="tbtn" id="capSave" aria-pressed="true">슬라이드에 자막 저장</button>
+            </div>
+            <div class="cc-row"><b>인식 언어</b>
+              <button class="tbtn" data-lang="ko-KR" aria-pressed="true">한국어</button>
+              <button class="tbtn" data-lang="en-US" aria-pressed="false">English</button>
+            </div>
+            <p class="cc-hint" id="capHint"></p>
+          </div>
+
+          <h3 class="sub-h">이 페이지 녹음<small id="recPage"></small></h3>
+          <ul class="seglist" id="segList"></ul>
+
+          <div class="save-zone">
+            <div class="acct-row" id="railAcct"></div>
+            <div class="where" id="saveWhere"></div>
+            <button class="savebtn" id="saveBtn">저장</button>
+            <div class="save-log" id="saveLog"></div>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- 아래: 전체 녹음 타임라인 (녹음 패널을 펼쳤을 때) -->
+  <footer class="timeline" id="timeline" hidden>
+    <button class="tl-play" id="tlPlay" aria-label="선택한 구간 재생">▶</button>
+    <div class="tl-track" id="tlTrack">
+      <div class="tl-rail"></div>
+      <div class="tl-win" id="tlWin"></div>
+      <div class="tl-head" id="tlHead"></div>
+      <button class="tl-h" id="tlA" role="slider" aria-label="구간 시작 지점 (좌우 화살표로 0.5초씩 조절)"></button>
+      <button class="tl-h" id="tlB" role="slider" aria-label="구간 끝 지점 (좌우 화살표로 0.5초씩 조절)"></button>
+    </div>
+    <div class="tl-time" id="tlTime"></div>
+    <button class="tbtn" id="tlReset" hidden>원래대로</button>
+  </footer>
+</section>
+
+<!-- =====================================================================
+     대화상자: 새 노트 — 저장 위치 고르기
+     ===================================================================== -->
+<dialog id="newDlg" aria-labelledby="newDlgTitle">
+  <div class="dlg-head"><h2 id="newDlgTitle">어디에 저장할까요?</h2><button class="xbtn" data-close aria-label="닫기">×</button></div>
+  <div class="dlg-body">
+    <div class="choices">
+      <button class="choice" id="pickLocal">
+        <span class="ic">🖥️</span><b>내 컴퓨터</b>
+        <small id="localHint">폴더를 고르면 노트가 그 안에 저장됩니다</small>
+      </button>
+      <button class="choice" id="pickDrive">
+        <span class="ic"><svg width="30" height="30"><use href="#i-g"/></svg></span><b>Google Drive</b>
+        <small>Google로 로그인하면 내 드라이브에 저장됩니다</small>
+      </button>
+    </div>
+    <div class="drive-row" id="driveRow" hidden>
+      <input id="driveFolder" value="StudyPDF" aria-label="드라이브 폴더 이름">
+      <button id="driveGo">이 폴더로 만들기</button>
+    </div>
+    <h3 class="sub-h" id="recentTitle">최근 저장 위치</h3>
+    <ul class="recent" id="recentList"></ul>
+  </div>
+</dialog>
+
+<!-- =====================================================================
+     대화상자: 설정 (톱니바퀴)
+     ===================================================================== -->
+<dialog id="setDlg" class="sheet" aria-labelledby="setDlgTitle">
+  <div class="dlg-head"><h2 id="setDlgTitle">설정</h2><button class="xbtn" data-close aria-label="닫기">×</button></div>
+  <div class="dlg-body">
+    <div class="opt">
+      <label class="check"><input type="checkbox" id="optCancel"><span id="optCancelText">2초 이내 페이지 이동 시 녹음 취소</span></label>
+      <div class="range-row">
+        <input type="range" id="optSec" min="1" max="10" step="1" aria-label="기준 시간(초)">
+        <output id="optSecOut">2초</output>
+      </div>
+      <p>페이지를 빠르게 넘길 때 생기는 1~2초짜리 녹음 조각을 남기지 않습니다.</p>
+    </div>
+    <div class="opt">
+      <label class="check" id="optMergeLabel"><input type="checkbox" id="optMerge"><span id="optMergeText">2초 이내의 녹음은 이전 페이지 녹음 구간에 추가</span></label>
+      <p>지우는 대신, 넘기는 동안의 설명을 직전에 보던 페이지 녹음 뒤에 이어 붙입니다. 위 항목이 켜져 있을 때만 적용됩니다.</p>
+    </div>
+  </div>
+</dialog>
+
+
+<!-- =====================================================================
+     대화상자: 휴지통 (홈의 톱니바퀴)
+     ===================================================================== -->
+<dialog id="trashDlg" class="sheet" aria-labelledby="trashTitle">
+  <div class="dlg-head"><h2 id="trashTitle">휴지통</h2><button class="xbtn" data-close aria-label="닫기">×</button></div>
+  <div class="dlg-body">
+    <p class="note-hint">삭제한 노트가 여기에 보관됩니다. <b>복원</b>하면 원래 폴더로 돌아가고, <b>완전 삭제</b>하면 이 브라우저에서 영구히 지워집니다. 이미 내 컴퓨터나 Google Drive에 저장해 둔 파일은 건드리지 않습니다.</p>
+    <div><button class="tbtn danger" id="trashEmpty">휴지통 비우기</button></div>
+    <ul class="trash-list" id="trashList"></ul>
+  </div>
+</dialog>
+
+<!-- =====================================================================
+     대화상자: 노트 옮기기
+     ===================================================================== -->
+<dialog id="moveDlg" aria-labelledby="moveTitle">
+  <div class="dlg-head"><h2 id="moveTitle">어느 폴더로 옮길까요?</h2><button class="xbtn" data-close aria-label="닫기">×</button></div>
+  <div class="dlg-body">
+    <p class="note-hint" id="moveHint"></p>
+    <ul class="recent" id="moveList"></ul>
+  </div>
+</dialog>
+
+<script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+/* =====================================================================
+   0. 제작자 설정 — 딱 한 번만 입력 (사용자는 보지 않음)
+   ===================================================================== */
+const GOOGLE_CLIENT_ID = window.STUDYPDF_CLIENT_ID || '';   // config.js 에 한 번만 입력 (또는 이 따옴표 안에 직접 입력)
+
+/* =====================================================================
+   1. 기본 도구
+   ===================================================================== */
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const $ = id => document.getElementById(id);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const pad = n => String(n).padStart(2, '0');
+const mmss = ms => { const s = Math.round(ms / 1000); return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`; };
+const clock = t => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const ago = t => {
+  const m = Math.floor((Date.now() - t) / 60000);
+  if (m < 1) return '방금';
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전`;
+  const d = Math.floor(h / 24);
+  return d < 7 ? `${d}일 전` : new Date(t).toLocaleDateString('ko-KR');
+};
+const safeName = s => (s || '제목 없는 노트').replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 80) || '노트';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+let toastTimer;
+function toast(msg) {
+  document.querySelector('.toast')?.remove();
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 3200);
+}
+
+/* =====================================================================
+   2. 브라우저 저장소 (IndexedDB)
+      notes     : 노트 정보 (가벼움)
+      blobs     : PDF·녹음 파일 (무거움, 따로 보관)
+      locations : 최근 저장 위치
+      kv        : 설정, 로그인, 정렬 방식
+   ===================================================================== */
+let _db;
+function db() {
+  return _db ||= new Promise((res, rej) => {
+    const r = indexedDB.open('studypdf', 1);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      d.createObjectStore('notes', { keyPath: 'id' });
+      d.createObjectStore('blobs');
+      d.createObjectStore('locations', { keyPath: 'id' });
+      d.createObjectStore('kv');
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function run(store, mode, fn) {
+  const d = await db();
+  return new Promise((res, rej) => {
+    const t = d.transaction(store, mode), req = fn(t.objectStore(store));
+    t.oncomplete = () => res(req?.result);
+    t.onerror = () => rej(t.error);
+  });
+}
+const idb = {
+  get: (s, k) => run(s, 'readonly', o => o.get(k)),
+  all: s => run(s, 'readonly', o => o.getAll()),
+  put: (s, v, k) => run(s, 'readwrite', o => k === undefined ? o.put(v) : o.put(v, k)),
+  del: (s, k) => run(s, 'readwrite', o => o.delete(k)),
+};
+
+/* =====================================================================
+   3. 설정 (톱니바퀴)
+   ===================================================================== */
+const settings = { cancelOn: true, cancelSec: 2, mergeOn: false };
+
+async function loadSettings() {
+  Object.assign(settings, (await idb.get('kv', 'settings')) || {});
+  syncSettingsUI();
+}
+function syncSettingsUI() {
+  const s = settings.cancelSec;
+  $('optCancel').checked = settings.cancelOn;
+  $('optSec').value = s; $('optSec').disabled = !settings.cancelOn;
+  $('optSecOut').textContent = `${s}초`;
+  $('optCancelText').textContent = `${s}초 이내 페이지 이동 시 녹음 취소`;
+  $('optMergeText').textContent = `${s}초 이내의 녹음은 이전 페이지 녹음 구간에 추가`;
+  $('optMerge').checked = settings.mergeOn;
+  $('optMerge').disabled = !settings.cancelOn;
+  $('optMergeLabel').classList.toggle('off', !settings.cancelOn);
+}
+function saveSettings() { idb.put('kv', { ...settings }, 'settings'); syncSettingsUI(); }
+$('optCancel').onchange = e => { settings.cancelOn = e.target.checked; saveSettings(); };
+$('optSec').oninput = e => { settings.cancelSec = +e.target.value; saveSettings(); };
+$('optMerge').onchange = e => { settings.mergeOn = e.target.checked; saveSettings(); };
+
+document.querySelectorAll('[data-open-settings]').forEach(b => b.onclick = () => $('setDlg').showModal());
+document.querySelectorAll('dialog').forEach(d => {
+  d.addEventListener('click', e => { if (e.target === d) d.close(); });
+  d.querySelectorAll('[data-close]').forEach(b => b.onclick = () => d.close());
+});
+
+/* =====================================================================
+   4. Google 로그인 (사용자는 버튼만 누름)
+   ===================================================================== */
+const SCOPES = 'openid email profile https://www.googleapis.com/auth/drive.file';
+let auth = { token: null, exp: 0, email: '', picture: '' };
+const loggedIn = () => !!auth.token && auth.exp > Date.now() + 60000;
+
+async function loadAuth() {
+  const a = await idb.get('kv', 'auth');
+  if (a) auth = a;
+  renderAccount();
+}
+function login() {
+  return new Promise((res, rej) => {
+    if (!GOOGLE_CLIENT_ID) return rej(new Error('Google 로그인이 아직 설정되지 않았습니다. config.js 의 클라이언트 ID를 채워 주세요.'));
+    if (!window.google?.accounts?.oauth2) return rej(new Error('Google 로그인 모듈을 불러오는 중입니다. 잠시 후 다시 눌러 주세요.'));
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: SCOPES,
+      login_hint: auth.email || undefined,
+      callback: async r => {
+        if (r.error || !r.access_token) return rej(new Error('로그인이 완료되지 않았습니다.'));
+        auth.token = r.access_token;
+        auth.exp = Date.now() + (r.expires_in || 3600) * 1000;
+        try {
+          const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo',
+            { headers: { Authorization: `Bearer ${auth.token}` } }).then(x => x.json());
+          auth.email = u.email || ''; auth.picture = u.picture || '';
+        } catch {}
+        await idb.put('kv', { ...auth }, 'auth');
+        renderAccount();
+        res(auth.token);
+      },
+      error_callback: () => rej(new Error('로그인 창이 닫혔습니다.'))
+    });
+    client.requestAccessToken();
+  });
+}
+async function logout() {
+  if (auth.token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(auth.token, () => {});
+  auth = { token: null, exp: 0, email: '', picture: '' };
+  await idb.del('kv', 'auth');
+  renderAccount();
+  toast('로그아웃했습니다');
+}
+async function expireAuth() {
+  auth.token = null; auth.exp = 0;
+  await idb.put('kv', { ...auth }, 'auth');
+  renderAccount();
+}
+
+function avatarHTML() {
+  return auth.picture ? `<img src="${esc(auth.picture)}" alt="" referrerpolicy="no-referrer">`
+                      : `<svg><use href="#i-user"/></svg>`;
+}
+function renderAccount() {
+  const ok = loggedIn();
+  $('avatar').innerHTML = ok ? avatarHTML() : `<svg><use href="#i-user"/></svg>`;
+  $('accountLabel').textContent = ok ? '로그인 됨' : '로그인';
+  $('acctWho').textContent = auth.email;
+  const row = $('railAcct');
+  if (ok) {
+    row.innerHTML = `<span class="mini">${avatarHTML()}</span><span class="email"></span><button class="linkbtn" id="railLogout">로그아웃</button>`;
+    row.querySelector('.email').textContent = auth.email || 'Google 계정';
+    $('railLogout').onclick = logout;
+  } else {
+    row.innerHTML = `<button class="gbtn" id="railLogin"><svg><use href="#i-g"/></svg>Google로 로그인</button>`;
+    $('railLogin').onclick = () => login().catch(e => toast(e.message));
+  }
+  renderSaveZone();
+}
+
+$('accountBtn').onclick = e => {
+  e.stopPropagation();
+  if (!loggedIn()) return login().catch(err => toast(err.message));
+  $('acctMenu').hidden = !$('acctMenu').hidden;
+};
+$('logoutBtn').onclick = () => { $('acctMenu').hidden = true; logout(); };
+
+
+/* =====================================================================
+   5. 홈 — 폴더 트리, 노트 카드, 정렬
+      · 맨 위 단계 = "저장 위치"(내 컴퓨터에서 고른 폴더 / Google Drive 폴더)
+      · 그 아래 폴더는 앱이 직접 관리하며, 저장할 때 같은 이름·같은 구조의 실제 폴더로 만들어집니다
+        예) 바탕화면 › 동아리 › 대학교 › 1-2학기 › 자료구조 › (노트 폴더)
+   ===================================================================== */
+const SORTS = { created: '생성순', updated: '수정순', title: '이름순' };
+let sortMode = 'created';
+const HOME = { src: { local: true, drive: true }, sel: 'all', closed: {} };   // sel: 'all' | 'r:위치id' | 'f:폴더id'
+let FOLDERS = [];                                  // {id, rootId, parentId, name, createdAt}
+
+const srcOf = t => (t === 'drive' ? 'drive' : 'local');
+const srcLabel = t => (t === 'drive' ? 'Google Drive' : '내 컴퓨터');
+const noteTitle = n => n.title || '제목 없는 노트';
+const byCreated = (a, b) => (a.createdAt ?? a.usedAt ?? 0) - (b.createdAt ?? b.usedAt ?? 0);
+
+async function loadHomeState() {
+  FOLDERS = (await idb.get('kv', 'folders')) || [];
+  const ui = (await idb.get('kv', 'homeUI')) || {};
+  HOME.src = { local: true, drive: true, ...(ui.src || {}) };
+  HOME.sel = ui.sel || 'all'; HOME.closed = ui.closed || {};
+}
+const saveFolders = () => idb.put('kv', FOLDERS, 'folders');
+const saveHomeUI = () => idb.put('kv', { src: HOME.src, sel: HOME.sel, closed: HOME.closed }, 'homeUI');
+
+/* ── 폴더 계산 도구 ─────────────────────────────────────── */
+const folderById = id => FOLDERS.find(f => f.id === id);
+const kids = (rootId, parentId) => FOLDERS
+  .filter(f => f.rootId === rootId && (f.parentId || null) === (parentId || null))
+  .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+function folderChain(n) {                           // 노트가 든 폴더의 위에서 아래 순서 목록 (위치 제외)
+  const out = []; let f = n.folderId && folderById(n.folderId), guard = 0;
+  while (f && guard++ < 60) { out.unshift(f); f = f.parentId && folderById(f.parentId); }
+  return out;
+}
+const folderNames = n => folderChain(n).map(f => f.name);
+const pathLabel = n => [srcLabel(n.location.type), n.location.name, ...folderNames(n)].join(' › ');
+function descendantIds(id) {
+  const out = [id];
+  for (const f of FOLDERS.filter(x => x.parentId === id)) out.push(...descendantIds(f.id));
+  return out;
+}
+function askName(title, def = '') {
+  const v = prompt(title, def); if (v === null) return null;
+  const name = v.trim();
+  if (!name) { toast('이름을 입력해 주세요'); return null; }
+  if (/[\\/:*?"<>|]/.test(name)) { toast('폴더 이름에는 \\ / : * ? " < > | 문자를 쓸 수 없습니다'); return null; }
+  return name.slice(0, 60);
+}
+
+/* ── 정렬 메뉴 ──────────────────────────────────────────── */
+$('sortBtn').onclick = e => { e.stopPropagation(); $('sortMenu').hidden = !$('sortMenu').hidden; };
+$('sortMenu').querySelectorAll('button').forEach(b => b.onclick = () => {
+  sortMode = b.dataset.sort; idb.put('kv', sortMode, 'sort');
+  $('sortMenu').hidden = true; renderHome();
+});
+document.addEventListener('click', () => { $('sortMenu').hidden = true; $('acctMenu').hidden = true; });
+
+/* ── 저장 위치 토글 (G drive / 내 컴퓨터) ───────────────── */
+function bindSource(btn, key) {
+  btn.onclick = () => { HOME.src[key] = !HOME.src[key]; saveHomeUI(); renderHome(); };
+}
+bindSource($('srcDrive'), 'drive'); bindSource($('srcLocal'), 'local');
+
+/* ── 홈 그리기 ──────────────────────────────────────────── */
+function visibleNotes(all) {
+  const base = all.filter(n => !n.deletedAt && HOME.src[srcOf(n.location.type)]);
+  const sel = HOME.sel;
+  if (sel === 'all') return base;
+  if (sel.startsWith('r:')) return base.filter(n => n.location.id === sel.slice(2) && !n.folderId);
+  return base.filter(n => n.folderId === sel.slice(2));
+}
+
+async function renderTree(all) {
+  const locs = (await idb.all('locations')).filter(l => HOME.src[srcOf(l.type)]).sort(byCreated);
+  const live = all.filter(n => !n.deletedAt);
+  const cnt = (rootId, fid) => live.filter(n => n.location.id === rootId && (n.folderId || null) === (fid || null)).length;
+
+  // 고른 항목이 사라졌거나 숨겨졌으면 '전체'로
+  if (HOME.sel.startsWith('r:') && !locs.some(l => l.id === HOME.sel.slice(2))) HOME.sel = 'all';
+  if (HOME.sel.startsWith('f:')) {
+    const f = folderById(HOME.sel.slice(2));
+    if (!f || !locs.some(l => l.id === f.rootId)) HOME.sel = 'all';
+  }
+  const pathKeys = new Set([HOME.sel]);              // 고른 곳까지의 경로는 분홍색으로
+  if (HOME.sel.startsWith('f:')) {
+    let f = folderById(HOME.sel.slice(2));
+    while (f) { pathKeys.add('f:' + f.id); if (!f.parentId) pathKeys.add('r:' + f.rootId); f = f.parentId && folderById(f.parentId); }
+  }
+
+  $('srcDrive').setAttribute('aria-checked', HOME.src.drive);
+  $('srcLocal').setAttribute('aria-checked', HOME.src.local);
+
+  const ul = $('treeList'); ul.innerHTML = '';
+  const row = ({ key, depth, icon, label, count, hasKids, actions }) => {
+    const li = document.createElement('li'), r = document.createElement('div');
+    r.className = 'tn-row' + (pathKeys.has(key) ? ' on' : '') + (HOME.sel === key ? ' cur' : '');
+    r.style.setProperty('--d', depth);
+    const arrow = document.createElement('button'); arrow.className = 'tn-arrow';
+    arrow.disabled = !hasKids; arrow.textContent = HOME.closed[key] ? '▸' : '▾';
+    arrow.setAttribute('aria-label', HOME.closed[key] ? '펼치기' : '접기');
+    arrow.onclick = e => { e.stopPropagation(); HOME.closed[key] = !HOME.closed[key]; saveHomeUI(); renderHome(); };
+    const name = document.createElement('button'); name.className = 'tn-name';
+    name.innerHTML = `${icon}<span class="t"></span>`; name.querySelector('.t').textContent = label;
+    name.setAttribute('aria-current', HOME.sel === key ? 'true' : 'false');
+    name.onclick = () => { HOME.sel = key; saveHomeUI(); renderHome(); };
+    const c = document.createElement('span'); c.className = 'tn-cnt'; c.textContent = count;
+    const act = document.createElement('span'); act.className = 'tn-act';
+    (actions || []).forEach(([glyph, lab, fn]) => {
+      const b = document.createElement('button'); b.textContent = glyph; b.title = lab; b.setAttribute('aria-label', lab);
+      b.onclick = e => { e.stopPropagation(); fn(); }; act.appendChild(b);
+    });
+    r.append(arrow, name, c, act); li.appendChild(r);
+    return li;
+  };
+  const addKids = (parentLi, rootId, parentId, depth) => {
+    const ks = kids(rootId, parentId); if (!ks.length) return;
+    const sub = document.createElement('ul'); sub.className = 'tn-kids';
+    for (const f of ks) {
+      const li = row({ key: 'f:' + f.id, depth, icon: '<span aria-hidden="true">📁</span>', label: f.name, count: cnt(rootId, f.id),
+        hasKids: kids(rootId, f.id).length > 0,
+        actions: [['＋', '하위 폴더 만들기', () => addFolder(rootId, f.id)], ['✎', '이름 바꾸기', () => renameFolder(f)], ['🗑', '폴더 삭제', () => deleteFolder(f)]] });
+      if (!HOME.closed['f:' + f.id]) addKids(li, rootId, f.id, depth + 1);
+      sub.appendChild(li);
+    }
+    parentLi.appendChild(sub);
+  };
+
+  const shown = live.filter(n => HOME.src[srcOf(n.location.type)]).length;
+  ul.appendChild(row({ key: 'all', depth: 0, icon: '<span aria-hidden="true">🗂️</span>', label: '전체 노트', count: shown, hasKids: false }));
+  for (const loc of locs) {
+    const icon = loc.type === 'drive' ? '<svg width="18" height="18" aria-hidden="true"><use href="#i-g"/></svg>' : '<span aria-hidden="true">🖥️</span>';
+    const li = row({ key: 'r:' + loc.id, depth: 0, icon, label: loc.name, count: cnt(loc.id, null), hasKids: kids(loc.id, null).length > 0,
+      actions: [['＋', '폴더 만들기', () => addFolder(loc.id, null)], ['×', '저장 위치 목록에서 제거', () => removeRoot(loc)]] });
+    if (!HOME.closed['r:' + loc.id]) addKids(li, loc.id, null, 1);
+    ul.appendChild(li);
+  }
+  if (!locs.length) {
+    const li = document.createElement('li'); li.className = 'tree-note';
+    li.textContent = '저장 위치가 없습니다. 아래 “저장 위치 추가”로 내 컴퓨터의 폴더나 Google Drive 폴더를 등록하세요.';
+    ul.appendChild(li);
+  }
+  return locs;
+}
+
+async function renderHome() {
+  const all = await idb.all('notes');
+  const locs = await renderTree(all);
+  const title = noteTitle;
+  const notes = visibleNotes(all);
+  notes.sort((a, b) =>
+    sortMode === 'title'   ? title(a).localeCompare(title(b), 'ko') :
+    sortMode === 'updated' ? b.updatedAt - a.updatedAt :
+                             b.createdAt - a.createdAt);
+
+  const liveCount = all.filter(n => !n.deletedAt).length, trashCount = all.length - liveCount;
+  $('trashBadge').hidden = trashCount === 0; $('trashBadge').textContent = trashCount;
+  $('sortLabel').textContent = SORTS[sortMode];
+  $('sortMenu').querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', b.dataset.sort === sortMode));
+
+  $('emptyHome').hidden = !(liveCount === 0 && HOME.sel === 'all');
+  const ef = $('emptyFolder');
+  ef.hidden = !(notes.length === 0 && !(liveCount === 0 && HOME.sel === 'all'));
+  if (!ef.hidden) {
+    ef.innerHTML = '<b></b><span></span>';
+    ef.querySelector('b').textContent = HOME.sel === 'all' ? '보이는 노트가 없습니다' : '이 폴더에는 아직 노트가 없습니다';
+    ef.querySelector('span').textContent = HOME.sel === 'all'
+      ? '왼쪽 위의 G drive · 내 컴퓨터 스위치를 켜면 해당 위치의 노트가 보입니다.'
+      : '오른쪽 아래 “새 노트 만들기”를 누르면 이 폴더에 바로 저장됩니다.';
+  }
+  $('grid').hidden = notes.length === 0;
+  $('fabWrap').hidden = liveCount === 0 && HOME.sel === 'all';
+
+  // 새 노트가 저장될 위치를 눈에 보이게
+  const where = $('fabWhere');
+  if (HOME.sel === 'all') where.hidden = true;
+  else {
+    let names = [];
+    if (HOME.sel.startsWith('r:')) { const l = locs.find(x => x.id === HOME.sel.slice(2)); if (l) names = [l.name]; }
+    else { let f = folderById(HOME.sel.slice(2)); while (f) { names.unshift(f.name); if (!f.parentId) { const l = locs.find(x => x.id === f.rootId); if (l) names.unshift(l.name); } f = f.parentId && folderById(f.parentId); } }
+    where.hidden = !names.length; where.textContent = '저장 위치: ' + names.join(' › ');
+  }
+
+  const grid = $('grid'); grid.innerHTML = '';
+  for (const n of notes) {
+    const card = document.createElement('article'); card.className = 'card';
+    const open = document.createElement('button'); open.className = 'card-open';
+    const th = document.createElement('div'); th.className = 'thumb';
+    if (n.thumb) th.style.backgroundImage = `url(${n.thumb})`; else th.textContent = 'PDF 없음';
+    const cap = document.createElement('div'); cap.className = 'cap';
+    const t = document.createElement('strong'); t.textContent = title(n);
+    const wh = document.createElement('span'); wh.textContent = pathLabel(n); wh.title = pathLabel(n);
+    wh.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    const when = document.createElement('span');
+    when.textContent = sortMode === 'created' ? `${ago(n.createdAt)} 생성` : `${ago(n.updatedAt)} 수정`;
+    cap.append(t, wh, when); open.append(th, cap);
+    open.onclick = () => openNote(n);
+    const mv = document.createElement('button'); mv.className = 'card-mv'; mv.textContent = '📁';
+    mv.setAttribute('aria-label', `${title(n)} 폴더 옮기기`); mv.title = '폴더 옮기기';
+    mv.onclick = () => openMove(n);
+    const del = document.createElement('button'); del.className = 'card-del'; del.textContent = '×';
+    del.setAttribute('aria-label', `${title(n)} 휴지통으로`); del.title = '휴지통으로';
+    del.onclick = () => trashNote(n);
+    card.append(open, mv, del); grid.appendChild(card);
+  }
+}
+
+/* ── 폴더 만들기 · 이름 바꾸기 · 삭제 ─────────────────── */
+async function addFolder(rootId, parentId) {
+  const name = askName('새 폴더 이름'); if (!name) return;
+  if (kids(rootId, parentId).some(f => f.name === name)) return toast('같은 이름의 폴더가 이미 있습니다');
+  const f = { id: uid(), rootId, parentId: parentId || null, name, createdAt: Date.now() };
+  FOLDERS.push(f); await saveFolders();
+  delete HOME.closed[parentId ? 'f:' + parentId : 'r:' + rootId];
+  HOME.sel = 'f:' + f.id; await saveHomeUI(); renderHome();
+}
+async function renameFolder(f) {
+  const name = askName('폴더 이름 바꾸기', f.name); if (!name || name === f.name) return;
+  if (kids(f.rootId, f.parentId).some(x => x.id !== f.id && x.name === name)) return toast('같은 이름의 폴더가 이미 있습니다');
+  const ids = new Set(descendantIds(f.id));
+  const saved = (await idb.all('notes')).some(n => n.savedAt && ids.has(n.folderId));
+  f.name = name; await saveFolders(); renderHome();
+  if (saved) toast('이미 저장된 파일은 이전 이름의 폴더에 남고, 다음 저장부터 새 이름의 폴더에 저장됩니다');
+}
+async function deleteFolder(f) {
+  const ids = new Set(descendantIds(f.id));
+  const all = await idb.all('notes');
+  const inside = all.filter(n => !n.deletedAt && ids.has(n.folderId));
+  if ((inside.length || ids.size > 1) &&
+      !confirm(`'${f.name}' 폴더${ids.size > 1 ? `(하위 폴더 ${ids.size - 1}개 포함)` : ''}와 안의 노트 ${inside.length}개를 휴지통으로 보낼까요?\n휴지통에서 복원하면 폴더도 원래대로 다시 만들어집니다.`)) return;
+  for (const n of inside) {
+    n.origin = { rootId: n.location.id, path: folderChain(n).map(x => ({ id: x.id, name: x.name, parentId: x.parentId })) };
+    n.deletedAt = Date.now(); await idb.put('notes', n);
+  }
+  FOLDERS = FOLDERS.filter(x => !ids.has(x.id)); await saveFolders();
+  renderHome();
+  if (inside.length) toast(`노트 ${inside.length}개를 휴지통으로 옮겼습니다`);
+}
+async function removeRoot(loc) {
+  const all = await idb.all('notes');
+  if (all.some(n => n.location.id === loc.id))
+    return toast('이 저장 위치에 노트(휴지통 포함)가 있어 제거할 수 없습니다. 먼저 노트를 옮기거나 완전 삭제해 주세요.');
+  if (!confirm(`'${loc.name}' 위치를 목록에서 제거할까요?\n내 컴퓨터·드라이브의 실제 폴더는 그대로 남습니다.`)) return;
+  FOLDERS = FOLDERS.filter(f => f.rootId !== loc.id); await saveFolders();
+  await idb.del('locations', loc.id);
+  renderHome();
+}
+
+/* ── 노트 옮기기 ──────────────────────────────────────── */
+async function openMove(n) {
+  const locs = (await idb.all('locations')).sort(byCreated);
+  const ul = $('moveList'); ul.innerHTML = '';
+  $('moveHint').textContent = `'${noteTitle(n)}'을(를) 옮길 폴더를 고르세요. 이미 저장한 파일은 이전 위치에 남고, 다음 저장부터 새 위치에 저장됩니다.`;
+  const add = (label, depth, loc, fid, icon) => {
+    const here = n.location.id === loc.id && (n.folderId || null) === (fid || null);
+    const li = document.createElement('li'), b = document.createElement('button');
+    b.innerHTML = `<span class="ic">${icon}</span><span class="nm"><b></b><span>${here ? '현재 위치' : srcLabel(loc.type)}</span></span>`;
+    b.querySelector('b').textContent = label; b.style.paddingLeft = (12 + depth * 20) + 'px'; b.disabled = here;
+    b.onclick = () => moveNote(n, loc, fid);
+    li.appendChild(b); ul.appendChild(li);
+  };
+  const walk = (loc, pid, d) => kids(loc.id, pid).forEach(f => { add(f.name, d, loc, f.id, '📁'); walk(loc, f.id, d + 1); });
+  for (const loc of locs) {
+    add(loc.name, 0, loc, null, loc.type === 'drive' ? '<svg width="20" height="20"><use href="#i-g"/></svg>' : '🖥️');
+    walk(loc, null, 1);
+  }
+  if (!locs.length) ul.innerHTML = '<li class="note-hint">등록된 저장 위치가 없습니다.</li>';
+  $('moveDlg').showModal();
+}
+async function moveNote(n, loc, fid) {
+  const sameRoot = n.location.id === loc.id;
+  n.folderId = fid || null;
+  if (!sameRoot) {                                   // 다른 저장 위치로 가면 다음 저장 때 처음부터 다시 올림
+    n.location = { type: loc.type, id: loc.id, name: loc.name, handle: loc.handle || null, folderId: loc.folderId || null };
+    n.drive = {}; (n.takes || []).forEach(t => { t.driveId = null; });
+  }
+  n.updatedAt = Date.now(); await idb.put('notes', n);
+  $('moveDlg').close();
+  toast(`'${noteTitle(n)}'을(를) ${pathLabel(n)}(으)로 옮겼습니다`);
+  renderHome();
+}
+
+/* =====================================================================
+   5-1. 휴지통 — 삭제한 노트 보관 · 원래 위치로 복원 · 완전 삭제
+   ===================================================================== */
+async function trashNote(n) {
+  n.origin = { rootId: n.location.id, path: folderChain(n).map(f => ({ id: f.id, name: f.name, parentId: f.parentId })) };
+  n.deletedAt = Date.now();
+  await idb.put('notes', n);
+  toast(`'${noteTitle(n)}'을(를) 휴지통으로 옮겼습니다 (오른쪽 위 ⚙에서 복원할 수 있습니다)`);
+  renderHome();
+}
+async function purgeNote(n) {
+  const keys = ['pdf:' + n.id, ...(n.takes || []).map(t => t.id), ...n.segments.flatMap(s => (s.parts || []).map(p => p.id))];
+  for (const k of keys) await idb.del('blobs', k);
+  if (n.recording) for (let k = 0; ; k++) {          // 끝맺지 못한 녹음 조각
+    const key = `chunk:${n.recording.takeId}:${k}`;
+    if (!(await idb.get('blobs', key))) break;
+    await idb.del('blobs', key);
+  }
+  await idb.del('notes', n.id);
+}
+async function restoreNote(n) {
+  // 저장 위치가 목록에서 사라졌으면 노트에 남은 정보로 되살림
+  if (!(await idb.get('locations', n.location.id)))
+    await idb.put('locations', { id: n.location.id, type: n.location.type, name: n.location.name,
+      handle: n.location.handle || null, folderId: n.location.folderId || null, createdAt: Date.now(), usedAt: Date.now() });
+  let parent = null;                                  // 지워진 폴더는 같은 id·이름으로 다시 만듦
+  for (const p of (n.origin?.path || [])) {
+    if (!folderById(p.id)) FOLDERS.push({ id: p.id, rootId: n.location.id, parentId: parent, name: p.name, createdAt: Date.now() });
+    parent = p.id;
+  }
+  await saveFolders();
+  n.folderId = parent;
+  delete n.deletedAt; delete n.origin;
+  await idb.put('notes', n);
+  if (!HOME.src[srcOf(n.location.type)]) { HOME.src[srcOf(n.location.type)] = true; await saveHomeUI(); }
+  toast(`'${noteTitle(n)}'을(를) ${pathLabel(n)}에 복원했습니다`);
+}
+async function renderTrash() {
+  const items = (await idb.all('notes')).filter(n => n.deletedAt).sort((a, b) => b.deletedAt - a.deletedAt);
+  const ul = $('trashList'); ul.innerHTML = '';
+  $('trashEmpty').disabled = items.length === 0;
+  if (!items.length) { ul.innerHTML = '<li class="tr-empty">휴지통이 비어 있습니다.</li>'; return; }
+  for (const n of items) {
+    const li = document.createElement('li'); li.className = 'tr-item';
+    const th = document.createElement('div'); th.className = 'tr-th'; if (n.thumb) th.style.backgroundImage = `url(${n.thumb})`;
+    const info = document.createElement('div');
+    const orig = [srcLabel(n.location.type), n.location.name, ...(n.origin?.path || []).map(p => p.name)].join(' › ');
+    info.innerHTML = '<b></b><small></small>';
+    info.querySelector('b').textContent = noteTitle(n);
+    info.querySelector('small').textContent = `원래 위치 ${orig} · ${ago(n.deletedAt)} 삭제`;
+    const btns = document.createElement('div'); btns.className = 'tr-btns';
+    const rs = document.createElement('button'); rs.className = 'tbtn'; rs.textContent = '복원';
+    rs.onclick = async () => { await restoreNote(n); await renderTrash(); renderHome(); };
+    const pg = document.createElement('button'); pg.className = 'tbtn danger'; pg.textContent = '완전 삭제';
+    pg.onclick = async () => {
+      if (!confirm(`'${noteTitle(n)}'을(를) 완전히 지울까요? 이 브라우저에서는 되돌릴 수 없습니다.`)) return;
+      await purgeNote(n); await renderTrash(); renderHome();
+    };
+    btns.append(rs, pg);
+    li.append(th, info, btns); ul.appendChild(li);
+  }
+}
+$('trashBtn').onclick = async () => { await renderTrash(); $('trashDlg').showModal(); };
+$('trashEmpty').onclick = async () => {
+  const items = (await idb.all('notes')).filter(n => n.deletedAt);
+  if (!items.length || !confirm(`휴지통의 노트 ${items.length}개를 모두 완전히 지울까요? 되돌릴 수 없습니다.`)) return;
+  for (const n of items) await purgeNote(n);
+  await renderTrash(); renderHome();
+};
+
+/* =====================================================================
+   6. 새 노트 — 저장 위치 고르기 (고른 폴더가 있으면 거기에 바로 저장)
+   ===================================================================== */
+const MAX_RECENT = 10;
+let pickMode = 'note';                               // 'note' = 새 노트를 만들 위치 / 'root' = 저장 위치만 등록
+document.querySelectorAll('[data-new-note]').forEach(b => b.onclick = onNewNote);
+$('addRoot').onclick = () => openNewDialog('root');
+
+async function onNewNote() {
+  const sel = HOME.sel;
+  if (sel === 'all') return openNewDialog('note');
+  const rootId = sel.startsWith('r:') ? sel.slice(2) : folderById(sel.slice(2))?.rootId;
+  const loc = rootId && await idb.get('locations', rootId);
+  if (!loc) return openNewDialog('note');
+  try {
+    if (loc.type === 'drive' && !loggedIn()) await login();
+    await createNote(loc, sel.startsWith('f:') ? sel.slice(2) : null);
+  } catch (e) { toast(e.message); }
+}
+
+async function openNewDialog(mode = 'note') {
+  pickMode = mode === 'root' ? 'root' : 'note';
+  $('driveRow').hidden = true;
+  $('newDlgTitle').textContent = pickMode === 'root' ? '저장 위치 추가' : '어디에 저장할까요?';
+  if (!window.showDirectoryPicker) $('localHint').textContent = '이 브라우저는 폴더 선택을 지원하지 않아 압축 파일로 내려받습니다';
+  await renderRecent();
+  $('newDlg').showModal();
+}
+
+async function renderRecent() {
+  const list = pickMode === 'root' ? [] : (await idb.all('locations')).sort((a, b) => b.usedAt - a.usedAt).slice(0, MAX_RECENT);
+  $('recentTitle').hidden = list.length === 0;
+  const ul = $('recentList'); ul.innerHTML = '';
+  for (const loc of list) {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.innerHTML = `<span class="ic">${loc.type === 'drive' ? '<svg width="20" height="20"><use href="#i-g"/></svg>' : '🖥️'}</span>
+      <span class="nm"><b></b><span>${srcLabel(loc.type)}</span></span>
+      <span class="when">${ago(loc.usedAt)}</span>`;
+    b.querySelector('b').textContent = loc.name;
+    b.onclick = async () => {
+      try {
+        if (loc.type === 'drive' && !loggedIn()) await login();
+        await createNote(loc);
+      } catch (e) { toast(e.message); }
+    };
+    li.appendChild(b); ul.appendChild(li);
+  }
+}
+
+async function chooseLocation(loc) {
+  if (pickMode === 'root') {
+    loc.createdAt ??= Date.now(); loc.usedAt = Date.now();
+    await idb.put('locations', loc);
+    $('newDlg').close();
+    HOME.sel = 'r:' + loc.id; HOME.src[srcOf(loc.type)] = true; await saveHomeUI();
+    await renderHome(); toast(`저장 위치 '${loc.name}'를 추가했습니다`);
+  } else await createNote(loc);
+}
+
+$('pickLocal').onclick = async () => {
+  let loc;
+  if (!window.showDirectoryPicker) {
+    loc = (await idb.all('locations')).find(l => l.type === 'local' && !l.handle)
+       || { id: uid(), type: 'local', name: '다운로드 폴더', handle: null };
+  } else {
+    let h;
+    try { h = await window.showDirectoryPicker({ id: 'studypdf', mode: 'readwrite' }); }
+    catch { return; }                                   // 선택 취소
+    for (const l of await idb.all('locations')) {
+      if (l.type === 'local' && l.handle && await l.handle.isSameEntry(h)) { loc = l; break; }
+    }
+    loc ||= { id: uid(), type: 'local', name: h.name, handle: h };
+  }
+  await chooseLocation(loc);
+};
+
+$('pickDrive').onclick = () => { $('driveRow').hidden = false; $('driveFolder').focus(); $('driveFolder').select(); };
+$('driveGo').onclick = async () => {
+  try {
+    if (!loggedIn()) await login();
+    const name = $('driveFolder').value.trim() || 'StudyPDF';
+    const loc = (await idb.all('locations')).find(l => l.type === 'drive' && l.name === name)
+             || { id: uid(), type: 'drive', name, folderId: null };
+    await chooseLocation(loc);
+  } catch (e) { toast(e.message); }
+};
+$('driveFolder').onkeydown = e => { if (e.key === 'Enter') $('driveGo').click(); };
+
+async function createNote(loc, folderId = null) {
+  loc.usedAt = Date.now(); loc.createdAt ??= loc.usedAt;
+  await idb.put('locations', loc);                      // 저장 위치는 트리의 뿌리이므로 지우지 않음
+
+  const note = {
+    id: uid(), title: '', createdAt: Date.now(), updatedAt: Date.now(),
+    location: { type: loc.type, id: loc.id, name: loc.name, handle: loc.handle || null, folderId: loc.folderId || null },
+    folderId: folderId || null,
+    notes: {}, segments: [], takes: [], captions: [], drive: {}, thumb: null
+  };
+  await idb.put('notes', note);
+  $('newDlg').close();
+  await openNote(note);
+  $('titleInput').focus();
+}
+
+
+/* =====================================================================
+   7. 노트 열기 · PDF · 페이지 구성
+      - 필기·녹음·자막은 "쪽 번호"가 아니라 "페이지 고유 id(pid)"에 붙입니다.
+        그래서 중간에 빈 페이지를 끼워 넣어도 기존 필기·녹음이 밀리지 않습니다.
+      - note.pages = [{id, src}] (PDF 쪽)  /  [{id, blank:true}] (빈 페이지)
+        원래 PDF 쪽의 id는 "1", "2", …(옛 노트와 호환)
+   ===================================================================== */
+const S = {
+  note: null, pdf: null, page: 1, numPages: 0, pdfPages: 0, ratio: 1.414, view: 'page',
+  session: false, stream: null, rec: null, recInfo: null, tick: null,
+  lastKept: null, selSeg: null, take: null
+};
+const pgs = () => S.note?.pages || [];
+const pidAt = (pos = S.page) => pgs()[pos - 1]?.id;
+const posOf = (pid, note = S.note) => (note?.pages || []).findIndex(p => p.id === pid) + 1;   // 0이면 없음
+const ratioCache = {};
+
+async function openNote(n) {
+  S.note = n; S.pdf = null; S.page = 1; S.numPages = 0; S.pdfPages = 0; S.lastKept = null; S.selSeg = null;
+  n.captions ||= []; n.takes ||= [];
+  n.segments.forEach(s => { if (!s.pid && s.page != null) s.pid = String(s.page); });   // 1차 버전 노트 호환
+  if (migrateNote(n)) await idb.put('notes', n);                          // 구간마다 파일이 따로 있던 옛 노트를 변환
+  $('home').hidden = true; $('editor').hidden = false;
+  $('titleInput').value = n.title || '';
+  $('saveLog').textContent = n.savedAt ? `마지막 저장 ${ago(n.savedAt)}` : '';
+  setRecIdle(); $('recSub').textContent = '';
+  setRecOpen(false); setTopFold(false);
+  const pdfBlob = await idb.get('blobs', 'pdf:' + n.id);
+  if (pdfBlob) await loadPdf(pdfBlob); else showPdfEmpty();
+  setTopFold(!!(S.pdf && n.title));            // 이미 제목·PDF가 있으면 상단은 접어서 시작
+  renderSaveZone();
+  if (n.recording && S.pdf) await recoverRecording(n);     // 창이 닫혀 끝맺지 못한 녹음 복구
+}
+
+function showPdfEmpty() {
+  $('pdfEmpty').hidden = false; $('pdfStage').hidden = true; $('navbar').hidden = true;
+  $('strip').innerHTML = ''; $('recBtn').disabled = true;
+  $('notes').contentEditable = 'false'; $('notes').innerHTML = '';
+  $('notesPage').textContent = ''; $('recPage').textContent = '';
+  refreshSegments(); renderCaps();
+}
+
+function ensurePages() {
+  const n = S.note;
+  if (!n.pages) {
+    n.pages = [];
+    for (let i = 1; i <= S.pdfPages; i++) n.pages.push({ id: String(i), src: i });
+  } else {                                     // PDF를 더 긴 것으로 바꾼 경우 새 쪽을 뒤에 붙임
+    const have = new Set(n.pages.filter(p => !p.blank).map(p => p.src));
+    for (let i = 1; i <= S.pdfPages; i++) if (!have.has(i)) n.pages.push({ id: String(i), src: i });
+  }
+}
+
+async function loadPdf(blob) {
+  S.pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+  S.pdfPages = S.pdf.numPages;
+  ensurePages();
+  S.numPages = pgs().length;
+  S.page = Math.min(Math.max(S.page, 1), S.numPages);
+  const first = await S.pdf.getPage(1), v = first.getViewport({ scale: 1 });
+  S.ratio = v.height / v.width;
+  $('pdfEmpty').hidden = true; $('pdfStage').hidden = false; $('navbar').hidden = false;
+  $('recBtn').disabled = false;
+  $('notes').contentEditable = 'true';
+  $('notes').dataset.placeholder = '이 페이지에 필기하세요. 글자를 선택하고 위의 색을 누르면 색이 바뀌고, 고른 색은 다음 글자와 다른 페이지에도 이어집니다.';
+  setView(S.view);
+  showPageUI();
+}
+
+async function makeThumb() {
+  const p = await S.pdf.getPage(1);
+  const v = p.getViewport({ scale: 1 });
+  const vp = p.getViewport({ scale: 360 / v.width });
+  const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+  await p.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+  return c.toDataURL('image/jpeg', .75);
+}
+
+async function takePdf(file) {
+  if (!file || file.type !== 'application/pdf') return toast('PDF 파일만 불러올 수 있습니다');
+  if (S.pdf && S.note.segments.length &&
+      !confirm('PDF를 바꿔도 페이지별 필기와 녹음은 같은 쪽에 그대로 남습니다. 바꿀까요?')) return;
+  if (S.session) await stopSession();
+  stashNotes();
+  await idb.put('blobs', file, 'pdf:' + S.note.id);
+  if (!S.note.title) { S.note.title = file.name.replace(/\.pdf$/i, ''); $('titleInput').value = S.note.title; }
+  S.note.drive.pdfId = null;
+  S.page = 1;
+  await loadPdf(file);
+  S.note.thumb = await makeThumb();
+  touch();
+}
+$('pdfBtn').onclick = $('pdfBtn2').onclick = () => $('pdfFile').click();
+$('pdfFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; takePdf(f); };
+const pane = $('pdfPane');
+pane.addEventListener('dragover', e => { e.preventDefault(); pane.classList.add('drag'); });
+pane.addEventListener('dragleave', () => pane.classList.remove('drag'));
+pane.addEventListener('drop', e => { e.preventDefault(); pane.classList.remove('drag'); takePdf(e.dataTransfer.files[0]); });
+
+/* ── 그리기: 한 쪽을 canvas에 (빈 페이지 포함) ───────────────── */
+async function ratioOf(pg) {
+  if (pg.blank || pg.src > S.pdfPages) return S.ratio;
+  if (ratioCache[pg.src]) return ratioCache[pg.src];
+  const p = await S.pdf.getPage(pg.src), v = p.getViewport({ scale: 1 });
+  return (ratioCache[pg.src] = v.height / v.width);
+}
+async function drawPage(canvas, pg, cssW) {
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas._task) { try { canvas._task.cancel(); } catch {} canvas._task = null; }
+  if (pg.blank || pg.src > S.pdfPages) {
+    const h = cssW * S.ratio;
+    canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(h * dpr);
+    canvas.style.width = cssW + 'px'; canvas.style.height = h + 'px';
+    const c = canvas.getContext('2d');
+    c.fillStyle = '#fff'; c.fillRect(0, 0, canvas.width, canvas.height);
+    c.fillStyle = '#D0D0D0'; c.textAlign = 'center';
+    c.font = `700 ${Math.round(canvas.width / 24)}px Pretendard, sans-serif`;
+    c.fillText(pg.blank ? '빈 페이지' : '원본 PDF에 없는 쪽', canvas.width / 2, canvas.height / 2);
+    return;
+  }
+  const page = await S.pdf.getPage(pg.src), base = page.getViewport({ scale: 1 });
+  const vp = page.getViewport({ scale: (cssW / base.width) * dpr });
+  canvas.width = vp.width; canvas.height = vp.height;
+  canvas.style.width = cssW + 'px'; canvas.style.height = (cssW * base.height / base.width) + 'px';
+  const task = page.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+  canvas._task = task;
+  try { await task.promise; } catch (e) { if (e?.name !== 'RenderingCancelledException') console.error(e); }
+}
+
+/* ── 쪽 넘기기 보기: 화면 크기에 맞춰 한 장이 스크롤 없이 보이게 ── */
+let renderSeq = 0;
+async function render() {
+  if (!S.pdf || S.view !== 'page') return;
+  const seq = ++renderSeq, pg = pgs()[S.page - 1];
+  if (!pg) return;
+  const ratio = await ratioOf(pg);
+  if (seq !== renderSeq) return;
+  const box = $('pdfView'), aw = box.clientWidth - 24, ah = box.clientHeight - 24;
+  if (aw < 60 || ah < 60) return;
+  let w = Math.min(aw, 1100);
+  if (w * ratio > ah) w = ah / ratio;
+  await drawPage($('pdfCanvas'), pg, Math.floor(w));
+}
+
+/* ── 스크롤 보기: 위아래로 이어 읽기 (스크롤바를 끌어서 이동) ─── */
+let io = null, scrollLockUntil = 0, drawQ = Promise.resolve();
+const pgEls = [];
+const scrollW = () => Math.max(260, Math.min($('scrollView').clientWidth - 32, 980));
+
+function buildScroll() {
+  const sv = $('scrollView'); sv.innerHTML = ''; pgEls.length = 0; io?.disconnect();
+  const w = scrollW();
+  pgs().forEach((pg, i) => {
+    const wrap = document.createElement('div'); wrap.className = 'pg'; wrap.dataset.pos = i + 1;
+    wrap.style.width = w + 'px'; wrap.style.height = (w * S.ratio) + 'px';
+    const cv = document.createElement('canvas'); wrap.appendChild(cv);
+    const tag = document.createElement('span'); tag.className = 'pgno'; tag.textContent = i + 1; wrap.appendChild(tag);
+    const ins = document.createElement('button'); ins.className = 'pg-ins'; ins.textContent = '＋ 여기에 빈 페이지 추가';
+    ins.onclick = () => insertBlank(i + 1); wrap.appendChild(ins);
+    sv.appendChild(wrap); pgEls.push(wrap);
+  });
+  io = new IntersectionObserver(onIntersect, { root: sv, rootMargin: '700px 0px' });
+  pgEls.forEach(e => io.observe(e));
+}
+function onIntersect(entries) {
+  for (const en of entries) {
+    const wrap = en.target, cv = wrap.firstChild;
+    if (en.isIntersecting) { if (!wrap._on) { wrap._on = true; queueDraw(wrap); } }
+    else if (wrap._on) {                         // 멀어진 쪽은 메모리 반환
+      wrap._on = false;
+      if (cv._task) { try { cv._task.cancel(); } catch {} }
+      cv.width = cv.height = 0;
+    }
+  }
+}
+function queueDraw(wrap) {
+  drawQ = drawQ.then(async () => {
+    if (!wrap._on || !wrap.isConnected) return;
+    const pg = pgs()[wrap.dataset.pos - 1];
+    if (!pg) return;
+    await drawPage(wrap.firstChild, pg, parseFloat(wrap.style.width));
+    wrap.style.height = wrap.firstChild.style.height;
+  }).catch(console.error);
+}
+function scrollToPage(pos) {
+  const el = pgEls[pos - 1]; if (!el) return;
+  scrollLockUntil = Date.now() + 300;
+  $('scrollView').scrollTop = el.offsetTop - 8;
+}
+let scT;
+$('scrollView').addEventListener('scroll', () => { clearTimeout(scT); scT = setTimeout(detectScrollPage, 110); });
+function detectScrollPage() {                    // 화면 위쪽에 걸린 쪽을 "현재 쪽"으로
+  if (S.view !== 'scroll' || Date.now() < scrollLockUntil || !pgEls.length) return;
+  const sv = $('scrollView'), y = sv.scrollTop + sv.clientHeight * .35;
+  let lo = 0, hi = pgEls.length - 1, pos = 1;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (pgEls[mid].offsetTop <= y) { pos = mid + 1; lo = mid + 1; } else hi = mid - 1; }
+  if (pos !== S.page) goTo(pos, { fromScroll: true });
+}
+
+function setView(v) {
+  S.view = v; idb.put('kv', v, 'view');
+  $('viewPage').setAttribute('aria-pressed', v === 'page');
+  $('viewScroll').setAttribute('aria-pressed', v === 'scroll');
+  $('pdfView').hidden = v !== 'page'; $('scrollView').hidden = v !== 'scroll';
+  if (!S.pdf) return;
+  if (v === 'page') render(); else { buildScroll(); scrollToPage(S.page); }
+}
+$('viewPage').onclick = () => setView('page');
+$('viewScroll').onclick = () => setView('scroll');
+
+let relT;
+function relayoutSoon() { clearTimeout(relT); relT = setTimeout(relayout, 140); }
+function relayout() {
+  if (!S.pdf || $('editor').hidden) return;
+  if (S.view === 'page') render(); else { buildScroll(); scrollToPage(S.page); }
+}
+new ResizeObserver(relayoutSoon).observe($('pdfStage'));
+
+/* ── 화면 갱신 ────────────────────────────────────────────── */
+function renderNavTexts() {
+  $('pageNo').textContent = `${S.page} / ${S.numPages}`;
+  $('prevBtn').disabled = S.page <= 1;
+  $('nextBtn').disabled = S.page >= S.numPages;
+  $('blankDel').hidden = !pgs()[S.page - 1]?.blank;
+}
+function showPageUI() {
+  savedRange = null;                              // 다른 쪽의 선택 영역을 끌고 오지 않음(색 적용 오류 원인)
+  renderNavTexts();
+  $('notesPage').textContent = `${S.page}쪽`;
+  $('recPage').textContent = ` ${S.page}쪽`;
+  $('notes').innerHTML = S.note.notes[pidAt()] || '';
+  renderStrip(); refreshSegments(); renderCaps();
+}
+
+/* =====================================================================
+   8. 페이지 이동 — 넘길 때마다 녹음을 끊고 새로 시작
+   ===================================================================== */
+let navQueue = Promise.resolve();
+function goTo(target, opts) {                    // 빠른 연타에도 순서대로 처리
+  navQueue = navQueue.then(() => _goTo(typeof target === 'function' ? target() : target, opts || {})).catch(console.error);
+  return navQueue;
+}
+async function _goTo(n, opts) {
+  if (!S.pdf || n < 1 || n > S.numPages || n === S.page) return;
+  stashNotes();
+  const cut = takeNow();
+  if (S.session) closeMarker(cut);                // 이전 페이지 구간 표시 마감 (녹음은 계속)
+  S.page = n;
+  showPageUI();
+  if (S.view === 'scroll') { if (!opts.fromScroll) scrollToPage(n); } else render();
+  if (S.session) openMarker(cut);                 // 새 페이지 구간 표시를 같은 시각에 시작 → 구간 사이에 빈틈 없음
+}
+$('prevBtn').onclick = () => goTo(() => S.page - 1);
+$('nextBtn').onclick = () => goTo(() => S.page + 1);
+document.addEventListener('keydown', e => {
+  if ($('editor').hidden || e.target.isContentEditable || /INPUT|TEXTAREA|BUTTON/.test(e.target.tagName)) return;
+  if (document.querySelector('dialog[open]') || S.view !== 'page') return;
+  if (['ArrowRight', 'PageDown'].includes(e.key)) { e.preventDefault(); goTo(() => S.page + 1); }
+  if (['ArrowLeft', 'PageUp'].includes(e.key))    { e.preventDefault(); goTo(() => S.page - 1); }
+});
+
+/* 쪽 번호를 눌러 입력 → 그 쪽으로 이동 */
+function jumpInput(host) {
+  if (!S.pdf || host.querySelector('input')) return;
+  const old = host.textContent, inp = document.createElement('input');
+  inp.type = 'number'; inp.min = 1; inp.max = S.numPages; inp.value = S.page; inp.className = 'jump-in';
+  inp.setAttribute('aria-label', `이동할 쪽 번호 (1~${S.numPages})`);
+  host.textContent = ''; host.appendChild(inp); inp.focus(); inp.select();
+  let done = false;
+  const end = go => {
+    if (done) return; done = true;
+    const v = parseInt(inp.value, 10);
+    host.textContent = old;
+    if (go && v >= 1 && v <= S.numPages) goTo(v);
+    else if (go) toast(`1~${S.numPages} 사이의 쪽 번호를 입력해 주세요`);
+    renderNavTexts();
+  };
+  inp.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') end(true); else if (e.key === 'Escape') end(false); };
+  inp.onblur = () => end(false);
+}
+$('pageNo').onclick = () => jumpInput($('pageNo'));
+$('pageNo').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jumpInput($('pageNo')); } };
+
+/* 현재 쪽 기준 앞뒤 6쪽씩만 표시 (사이사이 ＋ 로 빈 페이지 추가) */
+function renderStrip() {
+  const st = $('strip'); st.innerHTML = '';
+  if (!S.pdf || !S.note) return;
+  const a = Math.max(1, S.page - 6), b = Math.min(S.numPages, S.page + 6);
+  const mkBtn = (cls, txt, fn, label) => {
+    const el = document.createElement('button'); el.className = cls; el.textContent = txt; el.onclick = fn;
+    el.setAttribute('aria-label', label); el.title = label; return el;
+  };
+  const mkIns = after => mkBtn('ins', '+', () => insertBlank(after),
+    after === 0 ? '맨 앞에 빈 페이지 추가' : `${after}쪽 뒤에 빈 페이지 추가`);
+  if (a > 1) st.appendChild(mkBtn('chip nav', '«', () => goTo(1), '첫 쪽으로'));
+  st.appendChild(mkIns(a - 1));
+  for (let i = a; i <= b; i++) {
+    const pg = pgs()[i - 1];
+    let el;
+    if (i === S.page) {
+      el = document.createElement('span'); el.className = 'chip cur'; el.setAttribute('role', 'button'); el.tabIndex = 0;
+      el.textContent = i; el.title = '눌러서 쪽 번호 입력';
+      el.onclick = () => jumpInput(el);
+      el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jumpInput(el); } };
+    } else {
+      el = mkBtn('chip', i, () => goTo(i), `${i}쪽으로 이동${pg.blank ? ' (빈 페이지)' : ''}`);
+    }
+    el.dataset.has = S.note.segments.some(s => s.pid === pg.id) ? '1' : '0';
+    el.dataset.blank = pg.blank ? '1' : '0';
+    st.appendChild(el); st.appendChild(mkIns(i));
+  }
+  if (b < S.numPages) st.appendChild(mkBtn('chip nav', '»', () => goTo(S.numPages), '끝 쪽으로'));
+}
+function refreshStrip() { renderStrip(); }
+
+/* ── 빈 페이지: 페이지 사이 어디든 끼워 넣기 ───────────────── */
+async function insertBlank(afterPos) {
+  if (!S.pdf) return;
+  afterPos = Math.min(Math.max(afterPos, 0), S.numPages);
+  stashNotes();
+  const curId = pidAt();
+  S.note.pages.splice(afterPos, 0, { id: 'b' + uid(), blank: true });
+  S.numPages = S.note.pages.length;
+  S.page = posOf(curId);                          // 보던 쪽은 그대로 유지
+  touch();
+  showPageUI();
+  if (S.view === 'scroll') { buildScroll(); scrollToPage(S.page); } else render();
+  toast(`${afterPos + 1}쪽에 빈 페이지를 넣었습니다`);
+  goTo(afterPos + 1);                             // 바로 필기할 수 있게 새 쪽으로 이동
+}
+async function deleteBlank() {
+  const pg = pgs()[S.page - 1];
+  if (!pg?.blank) return;
+  if (S.note.segments.some(s => s.pid === pg.id)) return toast('이 빈 페이지에 녹음이 있습니다. 녹음 구간을 먼저 지워 주세요.');
+  const hasText = !!(S.note.notes[pg.id] || S.note.captions.some(c => c.pid === pg.id));
+  if (hasText && !confirm('이 빈 페이지의 필기·자막도 함께 지워집니다. 삭제할까요?')) return;
+  if (S.session) S.recInfo = null;                // 지워질 쪽의 구간 표시는 버림
+  delete S.note.notes[pg.id];
+  S.note.captions = S.note.captions.filter(c => c.pid !== pg.id);
+  S.note.pages.splice(S.page - 1, 1);
+  S.numPages = S.note.pages.length;
+  S.page = Math.min(S.page, S.numPages);
+  touch(); showPageUI();
+  if (S.view === 'scroll') { buildScroll(); scrollToPage(S.page); } else render();
+  if (S.session) openMarker();
+}
+
+$('blankBtn').onclick = e => { e.stopPropagation(); $('blankMenu').hidden = !$('blankMenu').hidden; };
+document.addEventListener('click', () => { $('blankMenu').hidden = true; });
+$('blankMenu').querySelectorAll('button').forEach(b => b.onclick = () => {
+  $('blankMenu').hidden = true;
+  const k = b.dataset.blank;
+  if (k === 'before') insertBlank(S.page - 1);
+  else if (k === 'after') insertBlank(S.page);
+  else if (k === 'del') deleteBlank();
+  else {
+    const v = prompt(`몇 쪽 뒤에 빈 페이지를 넣을까요? (0 = 맨 앞, 1~${S.numPages})`, String(S.page));
+    if (v === null) return;
+    const n = parseInt(v, 10);
+    if (Number.isNaN(n) || n < 0 || n > S.numPages) return toast(`0~${S.numPages} 사이의 숫자를 입력해 주세요`);
+    insertBlank(n);
+  }
+});
+
+
+/* =====================================================================
+   8-1. 접히는 상단·하단, 끌어서 조절하는 경계선
+   ===================================================================== */
+const layout = { railw: 380, segw: 190, rech: 320, caph: 120 };
+let autoFoldBlock = false;
+
+function applyLayout() {
+  const st = $('editor').style;
+  st.setProperty('--railw', layout.railw + 'px'); st.setProperty('--segw', layout.segw + 'px');
+  st.setProperty('--rech', layout.rech + 'px');   st.setProperty('--caph', layout.caph + 'px');
+}
+function setTopFold(fold) {
+  $('edTop').classList.toggle('folded', fold);   // 래퍼(.edtop)에 붙임
+  $('topFold').textContent = fold ? '⌄' : '⌃';
+  $('topFold').setAttribute('aria-expanded', String(!fold));
+  relayoutSoon();
+}
+$('topFold').onclick = () => setTopFold(!$('edTop').classList.contains('folded'));
+
+function setRecOpen(open) {
+  $('recZone').classList.toggle('open', open);
+  $('recToggle').textContent = open ? '⌄' : '⌃';
+  $('recToggle').setAttribute('aria-expanded', String(open));
+  $('recToggle').setAttribute('aria-label', open ? '녹음 패널 접기' : '녹음 패널 펼치기');
+  $('segCol').hidden = !open; $('splitL').hidden = !open; $('splitB').hidden = !open;
+  if (open) refreshSegments(); else $('timeline').hidden = true;
+  relayoutSoon();
+}
+$('recToggle').onclick = () => setRecOpen(!$('recZone').classList.contains('open'));
+
+/* 필기를 시작하면 위·아래가 저절로 들어감 (화살표를 눌러야 다시 나옴) */
+$('notes').addEventListener('focusin', () => {
+  if (autoFoldBlock || document.activeElement === $('titleInput')) return;
+  setTopFold(true); setRecOpen(false);
+});
+
+function initSplitters() {
+  const drag = (el, axis, key, sign, min, max) => el.addEventListener('pointerdown', e => {
+    e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('drag'); document.body.classList.add('resizing');
+    const start = axis === 'x' ? e.clientX : e.clientY, base = layout[key];
+    const mv = ev => {
+      const d = (axis === 'x' ? ev.clientX : ev.clientY) - start;
+      layout[key] = Math.round(Math.min(max(), Math.max(min, base + sign * d)));
+      applyLayout();
+    };
+    const up = () => {
+      el.classList.remove('drag'); document.body.classList.remove('resizing');
+      el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up);
+      idb.put('kv', { ...layout }, 'layout');
+    };
+    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up);
+  });
+  drag($('splitR'), 'x', 'railw', -1, 280, () => innerWidth * .65);
+  drag($('splitL'), 'x', 'segw', +1, 140, () => 380);
+  drag($('splitB'), 'y', 'rech', -1, 140, () => innerHeight * .75);
+  drag($('splitC'), 'y', 'caph', -1, 70, () => 320);
+}
+
+/* =====================================================================
+   9-1. 실시간 자막 — 브라우저 내장 Web Speech API (한국어 / English)
+        · 음성 인식 켜기/끄기, 슬라이드에 자막 저장 켜기/끄기를 따로 조절
+        · 지원하지 않는 브라우저에서는 버튼이 꺼진 채 안내만 보임
+   ===================================================================== */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const cap = { on: false, save: true, lang: 'ko-KR', r: null, want: false, pid: null, t0: 0, liveT: 0 };
+
+function syncCapUI() {
+  $('capOn').setAttribute('aria-pressed', cap.on);
+  $('capOn').textContent = cap.on ? '음성 인식 켜짐' : '음성 인식 꺼짐';
+  $('capSave').setAttribute('aria-pressed', cap.save);
+  document.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === cap.lang));
+  if (!SR) {
+    $('capOn').disabled = $('capSave').disabled = true;
+    document.querySelectorAll('[data-lang]').forEach(b => b.disabled = true);
+    $('capHint').textContent = '이 브라우저는 음성 인식을 지원하지 않습니다. 데스크톱 Chrome 또는 Edge에서 사용해 주세요.';
+  } else {
+    $('capHint').textContent = '한 번에 한 언어만 인식합니다. 인식된 문장은 말하기 시작한 쪽에 붙고, 녹음 중이면 그 녹음 구간의 시간과 연결됩니다. 음성은 브라우저 제공사의 인식 서버로 전송될 수 있습니다.';
+  }
+}
+function saveCapPrefs() { idb.put('kv', { save: cap.save, lang: cap.lang }, 'cap'); }
+
+function setCapOn(on) {
+  if (on && !SR) return toast('이 브라우저는 음성 인식을 지원하지 않습니다');
+  cap.on = on;
+  if (on) startCaps(); else stopCaps();
+  syncCapUI(); renderCaps();
+}
+$('capOn').onclick = () => setCapOn(!cap.on);
+$('capSave').onclick = () => { cap.save = !cap.save; saveCapPrefs(); syncCapUI(); toast(cap.save ? '인식한 자막을 슬라이드에 저장합니다' : '자막을 화면에만 보여 주고 저장하지 않습니다'); };
+document.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => {
+  cap.lang = b.dataset.lang; saveCapPrefs(); syncCapUI();
+  if (cap.on) { stopCaps(); cap.on = true; setTimeout(startCaps, 350); }   // 언어를 바꾸면 다시 시작
+});
+
+function startCaps() {
+  if (!SR || cap.r || !S.note) return;
+  cap.want = true;
+  const r = new SR();
+  r.lang = cap.lang; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+  r.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const res = e.results[i], txt = res[0].transcript;
+      if (!cap.pid) { cap.pid = pidAt(); cap.t0 = performance.now(); }       // 말하기 시작한 쪽
+      if (res.isFinal) { commitCap(txt.trim(), cap.pid, cap.t0); cap.pid = null; }
+      else interim += txt;
+    }
+    showLive(interim, true);
+  };
+  r.onerror = e => {
+    if (e.error === 'no-speech' || e.error === 'aborted') return;       // 조용했을 뿐: 정상
+    const msg = {
+      'not-allowed': '마이크 권한이 막혀 있어 자막을 켤 수 없습니다. 주소창 자물쇠에서 마이크를 허용해 주세요.',
+      'service-not-allowed': '이 브라우저는 음성 인식 서비스를 허용하지 않습니다. Chrome 또는 Edge에서 이용해 주세요.',
+      'network': '음성 인식 서버에 연결하지 못했습니다. 인터넷 연결을 확인하거나 Chrome·Edge에서 이용해 주세요.',
+      'audio-capture': '마이크를 사용할 수 없습니다. 다른 앱이 마이크를 쓰고 있는지 확인해 주세요.'
+    }[e.error] || `음성 인식 오류 (${e.error})`;
+    toast(msg);
+    if (['not-allowed', 'service-not-allowed', 'network', 'audio-capture'].includes(e.error)) setCapOn(false);
+  };
+  r.onend = () => {                               // 침묵 뒤 브라우저가 멈추면 자동 재시작
+    if (cap.r !== r) return;                      // 이미 멈추거나 새로 시작된 인식기의 뒤늦은 종료 신호
+    cap.r = null;
+    if (cap.want && cap.on) setTimeout(() => { if (cap.want && cap.on && !cap.r) startCaps(); }, 300);
+  };
+  try { r.start(); cap.r = r; } catch { cap.r = null; }
+}
+function stopCaps() {
+  cap.want = false; cap.pid = null;
+  try { cap.r?.stop(); } catch {}
+  cap.r = null; showLive('');
+}
+
+function commitCap(text, pid, t0p) {
+  if (!text) return;
+  showLive(text, false);
+  if (!cap.save || !S.note || !pid) return;
+  const linked = S.session && S.take;                       // 녹음 중이면 전체 녹음 위의 시간과 연결
+  S.note.captions.push({
+    id: uid(), pid, at: Date.now(), text, lang: cap.lang,
+    takeId: linked ? S.take.id : null,
+    takeMs: linked ? Math.max(0, Math.round(t0p - S.take.t0 - 700)) : 0     // 말하기 시작 직전부터 재생되도록 0.7초 앞당김
+  });
+  touch();
+  if (pid === pidAt()) renderCaps();
+}
+
+function showLive(text, interim) {
+  const el = $('liveCap');
+  clearTimeout(cap.liveT);
+  if (!text) { el.hidden = true; el.textContent = ''; return; }
+  el.hidden = false; el.textContent = text;
+  if (interim) el.innerHTML = `<i>${esc(text)}</i>`;
+  else cap.liveT = setTimeout(() => { el.hidden = true; }, 4500);
+}
+
+function renderCaps() {
+  const z = $('capZone');
+  if (!S.note || !S.pdf) { z.classList.add('off'); $('splitC').hidden = true; return; }
+  const pid = pidAt();
+  const list = S.note.captions.filter(c => c.pid === pid).sort((a, b) => a.at - b.at);
+  z.classList.toggle('off', !(cap.on || list.length));
+  $('splitC').hidden = z.classList.contains('off');
+  $('capPage').textContent = ` ${S.page}쪽`;
+  $('capClear').hidden = !list.length;
+  const ul = $('capList'); ul.innerHTML = '';
+  if (!list.length) { ul.innerHTML = '<li class="cap-none">이 쪽에 저장된 자막이 없습니다.</li>'; return; }
+  for (const c of list) {
+    const li = document.createElement('li');
+    const linked = !!(c.takeId && S.note.takes.some(k => k.id === c.takeId));
+    const t = document.createElement(linked ? 'button' : 'span');
+    t.className = 'ct'; t.textContent = linked ? mmss(c.takeMs) : clock(c.at).replace(/:\d\d$/, '');
+    if (linked) { t.title = '이 문장이 말해진 시점부터 재생'; t.onclick = () => playCaption(c); }
+    const tx = document.createElement('span'); tx.className = 'tx'; tx.textContent = c.text;
+    const x = document.createElement('button'); x.className = 'cx'; x.textContent = '×'; x.setAttribute('aria-label', '이 자막 지우기');
+    x.onclick = () => { S.note.captions = S.note.captions.filter(k => k !== c); touch(); renderCaps(); };
+    li.append(t, tx, x); ul.appendChild(li);
+  }
+  ul.scrollTop = ul.scrollHeight;
+}
+$('capClear').onclick = () => {
+  const pid = pidAt();
+  if (!confirm('이 쪽의 자막을 모두 지울까요?')) return;
+  S.note.captions = S.note.captions.filter(c => c.pid !== pid); touch(); renderCaps();
+};
+
+
+/* =====================================================================
+   9. 녹음 — 세션 전체를 파일 하나로 저장하고, 페이지마다 "구간 표시(마커)"만 남깁니다
+      · 페이지를 넘겨도 녹음은 끊기지 않습니다 (넘기는 순간의 소리도 빠지지 않음)
+      · 구간 = 전체 녹음 위의 [시작, 끝] 표시 → 나중에 앞뒤로 자유롭게 늘이거나 줄일 수 있음
+      · 5초마다 녹음 조각을 브라우저에 보관하므로, 창이 닫혀도 다음에 열 때 복구됩니다
+   ===================================================================== */
+const CHUNK_MS = 5000;
+const takeNow = () => S.take ? performance.now() - S.take.t0 : 0;
+const stamp = t => { const d = new Date(t); return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`; };
+const extOf = mime => /mp4/.test(mime) ? 'm4a' : /ogg/.test(mime) ? 'ogg' : 'webm';
+
+$('recBtn').onclick = async () => {
+  if (S.session) return stopSession();
+  if (!S.pdf) return;
+  if (S.note.recording) await recoverRecording(S.note);        // 중단됐던 녹음이 남아 있으면 먼저 복구
+  try { S.stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { return toast('마이크 권한이 필요합니다. 주소창 왼쪽 자물쇠 아이콘에서 마이크를 허용해 주세요.'); }
+  startSession();
+  setTopFold(true); setRecOpen(false);                          // 녹음 중에는 위·아래를 접어 둠
+};
+
+function startSession() {
+  const note = S.note, rec = new MediaRecorder(S.stream);
+  const run = { id: uid(), startedAt: Date.now(), mime: rec.mimeType || 'audio/webm',
+                t0: performance.now(), chunks: [], n: 0, endMs: 0, stopP: null };
+  S.take = run; S.rec = rec; S.session = true; S.lastKept = null;
+  rec.ondataavailable = e => {
+    if (!e.data.size) return;
+    run.chunks.push(e.data);
+    idb.put('blobs', e.data, `chunk:${run.id}:${run.n++}`);     // 조각 보관 (복구용)
+    syncRecording();
+  };
+  rec.onstop = () => { run.stopP = finishTake(run, note); };
+  note.recording = { takeId: run.id, startedAt: run.startedAt, mime: run.mime, chunks: 0, lastMs: 0, cur: null };
+  rec.start(CHUNK_MS);
+  $('recBtn').textContent = '■ 종료'; $('recBtn').classList.add('live');
+  openMarker();
+  clearInterval(S.tick); S.tick = setInterval(tickRec, 250);
+}
+
+/* 복구용 상태 기록: 몇 조각이 쌓였는지, 지금 열려 있는 구간 표시는 무엇인지 */
+function syncRecording() {
+  const r = S.note?.recording; if (!r || !S.take) return;
+  r.chunks = S.take.n; r.lastMs = Math.round(takeNow());
+  const m = S.recInfo;
+  r.cur = m ? { pid: m.pid, segId: m.segId, a: m.a, noteAt: m.noteAt } : null;
+  touch();
+}
+
+/* 페이지에 들어설 때: 구간 표시 시작 (녹음은 그대로 이어짐) */
+function openMarker(at) {
+  if (!S.session) return;
+  S.recInfo = { pid: pidAt(), segId: uid(), a: Math.round(at ?? takeNow()), noteAt: textLength(), locked: false };
+  syncRecording(); tickRec();
+}
+/* 페이지를 떠날 때: 구간 표시 마감 → 구간으로 만들지, 취소할지, 이전 구간에 붙일지 결정 */
+function closeMarker(endMs) {
+  const m = S.recInfo; S.recInfo = null;
+  if (!m) return;
+  const r = commitMarker(m, Math.round(endMs), S.take, S.note, S.lastKept);
+  if (r.seg) S.lastKept = r.seg;
+  if (r.msg) $('recSub').textContent = r.msg;
+  if (r.changed) { touch(); renderStrip(); refreshSegments(); }
+}
+function commitMarker(m, endMs, run, note, mergeTarget) {
+  const len = endMs - m.a, where = posOf(m.pid, note);
+  if (len < 100) return {};
+  const short = settings.cancelOn && len < settings.cancelSec * 1000;
+  const secTxt = (len / 1000).toFixed(1);
+  if (short) {
+    if (settings.mergeOn && mergeTarget && mergeTarget.takeId === run.id) {
+      mergeTarget.b = endMs; mergeTarget.b0 = endMs;           // 소리는 이어져 있으니 이전 구간의 끝만 늘리면 됨
+      return { changed: true, msg: `${where}쪽 ${secTxt}초는 기준(${settings.cancelSec}초)보다 짧아 ${posOf(mergeTarget.pid, note)}쪽 구간 끝에 이어 붙였습니다` };
+    }
+    return { msg: `${where}쪽 ${secTxt}초는 기준(${settings.cancelSec}초)보다 짧아 구간으로 만들지 않았습니다 (전체 녹음에는 남아 있습니다)` };
+  }
+  const seg = { id: m.segId, pid: m.pid, takeId: run.id, a: m.a, b: endMs, a0: m.a, b0: endMs,
+                startedAt: run.startedAt + m.a, noteAt: m.noteAt, label: '' };
+  note.segments.push(seg);
+  return { seg, changed: true, msg: `${where}쪽 ${mmss(len)} 구간 저장됨` };
+}
+
+function tickRec() {
+  const m = S.recInfo; if (!m || !S.session) return;
+  const el = $('recState'); el.className = 'rec-state live';
+  el.textContent = `${posOf(m.pid)}쪽 · 녹음 중 (이 구간 ${mmss(takeNow() - m.a)} · 전체 ${mmss(takeNow())})`;
+  renderRecLine();
+}
+
+async function stopSession() {
+  if (!S.session) return;
+  const run = S.take, rec = S.rec;
+  run.endMs = Math.round(takeNow());
+  closeMarker(run.endMs);
+  S.session = false; S.rec = null; clearInterval(S.tick);
+  await new Promise(res => { rec.addEventListener('stop', res, { once: true }); try { rec.stop(); } catch { res(); } });
+  await run.stopP;                                              // 전체 녹음 파일 저장이 끝날 때까지
+  S.stream?.getTracks().forEach(t => t.stop());
+  S.stream = null; S.take = null; S.recInfo = null;
+  setRecIdle(); refreshSegments(); renderStrip();
+}
+
+/* 녹음이 끝나면: 조각을 이어 붙여 "전체 녹음 파일" 하나로 저장 */
+async function finishTake(run, note) {
+  const blob = new Blob(run.chunks, { type: run.mime });
+  if (blob.size) {
+    await idb.put('blobs', blob, run.id);
+    note.takes.push({ id: run.id, startedAt: run.startedAt, durationMs: run.endMs, mime: run.mime,
+                      file: `take_${stamp(run.startedAt)}_${run.id}.${extOf(run.mime)}`, driveId: null });
+  } else {                                                      // 소리가 하나도 없으면 구간도 버림
+    note.segments = note.segments.filter(s => s.takeId !== run.id);
+  }
+  note.recording = null; note.updatedAt = Date.now();
+  for (let k = 0; k < run.n; k++) await idb.del('blobs', `chunk:${run.id}:${k}`);
+  await idb.put('notes', note);
+}
+
+/* 창이 닫히는 등으로 끝맺지 못한 녹음을 보관된 조각에서 복구 */
+async function recoverRecording(note) {
+  const r = note.recording; if (!r) return false;
+  const parts = [];
+  for (let k = 0; ; k++) { const c = await idb.get('blobs', `chunk:${r.takeId}:${k}`); if (!c) break; parts.push(c); }
+  const clean = async () => { for (let k = 0; k < parts.length + 1; k++) await idb.del('blobs', `chunk:${r.takeId}:${k}`); };
+  if (!parts.length) {
+    note.segments = note.segments.filter(s => s.takeId !== r.takeId);
+    note.recording = null; await idb.put('notes', note); return false;
+  }
+  const dur = Math.max(r.lastMs || 0, (parts.length - 1) * CHUNK_MS + 1000);
+  await idb.put('blobs', new Blob(parts, { type: r.mime }), r.takeId);
+  note.takes.push({ id: r.takeId, startedAt: r.startedAt, durationMs: dur, mime: r.mime,
+                    file: `take_${stamp(r.startedAt)}_${r.takeId}.${extOf(r.mime)}`, driveId: null });
+  if (r.cur && !note.segments.some(s => s.id === r.cur.segId))
+    commitMarker({ ...r.cur, locked: true }, dur, { id: r.takeId, startedAt: r.startedAt }, note, null);
+  note.segments = note.segments.filter(s => {
+    if (s.takeId !== r.takeId) return true;
+    s.b = Math.min(s.b, dur); s.b0 = Math.min(s.b0, dur);
+    return s.b - s.a >= 100;
+  });
+  note.recording = null; note.updatedAt = Date.now();
+  await clean(); await idb.put('notes', note);
+  if (S.note === note) { refreshSegments(); renderStrip(); }
+  toast(`중단됐던 녹음 ${mmss(dur)}를 복구했습니다`);
+  return true;
+}
+
+function setRecIdle() {
+  const el = $('recState'); el.className = 'rec-state';
+  el.textContent = '녹음이 꺼져 있습니다';
+  $('recBtn').textContent = '● 녹음'; $('recBtn').classList.remove('live');
+  renderRecLine();
+}
+addEventListener('beforeunload', e => { if (S.session) { e.preventDefault(); e.returnValue = ''; } });
+
+/* 접힌 한 줄: 몇 번째 구간인지 · 녹음 여부 · 시간 */
+function renderRecLine() {
+  const el = $('recLine'), segs = S.note ? sortedSegs() : [];
+  let txt, title = '';
+  if (S.session && S.recInfo) {
+    txt = `● 녹음 중 · ${posOf(S.recInfo.pid)}쪽 · ${mmss(takeNow())}`;
+  } else {
+    const i = segs.findIndex(s => s.id === S.selSeg);
+    if (i >= 0) {
+      const s = segs[i];
+      txt = `구간 ${i + 1}/${segs.length} · ${mmss(effDur(s))}`;
+      title = `${txt} (전체 녹음 ${mmss(s.a)}~${mmss(s.b)})`;
+    }
+    else if (segs.length) txt = `녹음 꺼짐 · 구간 ${segs.length}개 · ${mmss(segs.reduce((x, s) => x + effDur(s), 0))}`;
+    else txt = '녹음 꺼짐';
+  }
+  el.textContent = txt; el.title = title || txt;
+  el.classList.toggle('live', !!S.session);
+}
+
+
+/* =====================================================================
+   10. 녹음 구간 — 목록 · 타임라인 · 재생 · 사후 수정
+       구간은 "전체 녹음 파일 위의 시작·끝 표시"입니다.
+       그래서 타임라인에서 시작·끝 동그라미를 옆 구간 쪽으로 얼마든지 늘일 수 있고,
+       [원래대로]로 처음 잡힌 구간으로 되돌릴 수도 있습니다.
+   ===================================================================== */
+const takeById = id => {
+  const t = S.note?.takes.find(x => x.id === id);
+  if (t) return t;
+  if (S.take && S.take.id === id) return { id, startedAt: S.take.startedAt, durationMs: Math.round(takeNow()), mime: S.take.mime, live: true };
+  return null;
+};
+const sortedSegs = () => S.note ? [...S.note.segments].sort((x, y) => (x.startedAt - y.startedAt) || (x.a0 - y.a0)) : [];
+const effDur = s => Math.max(s.b - s.a, 0);
+const segName = (s, i) => s.label || `구간 ${i}`;
+const segChanged = s => s.a !== s.a0 || s.b !== s.b0;
+
+let playingId = null;
+
+function refreshSegments() {
+  const ul = $('segList'), all = $('segAll');
+  ul.innerHTML = ''; all.innerHTML = '';
+  if (!S.note || !S.pdf) { $('timeline').hidden = true; renderRecLine(); return; }
+  const segs = sortedSegs(), pid = pidAt();
+
+  /* 오른쪽 패널: 지금 보는 쪽의 녹음 */
+  const mine = segs.filter(s => s.pid === pid);
+  if (!mine.length) {
+    ul.innerHTML = `<li class="seg-empty">${S.session ? '이 페이지 녹음이 진행 중입니다.' : '이 페이지에 저장된 녹음이 없습니다.'}</li>`;
+  }
+  mine.forEach(seg => {
+    const gi = segs.indexOf(seg) + 1;
+    const li = document.createElement('li');
+    li.className = 'seg' + (playingId === seg.id ? ' playing' : '');
+    li.innerHTML = `
+      <button class="seg-main">
+        <span class="seg-icon">${playingId === seg.id ? '■' : '▶'}</span>
+        <b></b><span class="d">${mmss(effDur(seg))}</span>
+        <span class="t">${clock(seg.startedAt)} 시작</span>
+        ${segChanged(seg) ? `<span class="m">구간을 조정했습니다</span>` : ''}
+      </button>
+      <button class="seg-edit" aria-label="이름 바꾸기">✎</button>
+      <button class="seg-del" aria-label="구간 삭제">×</button>`;
+    li.querySelector('b').textContent = segName(seg, gi);
+    li.querySelector('.seg-main').onclick = () => playingId === seg.id ? stopPlay() : (selectSeg(seg, false), jumpTo(seg));
+    li.querySelector('.seg-edit').onclick = () => renameSeg(seg);
+    li.querySelector('.seg-del').onclick = () => deleteSegment(seg);
+    ul.appendChild(li);
+  });
+
+  /* 왼쪽: 전체 구간 (전체 녹음 위의 시간 범위) */
+  if (!segs.length) all.innerHTML = '<li class="sa-empty">아직 녹음이 없습니다.</li>';
+  const takeIds = [...new Set(segs.map(s => s.takeId))];
+  let lastTake = null;
+  segs.forEach((seg, i) => {
+    if (takeIds.length > 1 && seg.takeId !== lastTake) {
+      const t = takeById(seg.takeId), h = document.createElement('li');
+      h.className = 'sa-grp'; h.textContent = `녹음 ${takeIds.indexOf(seg.takeId) + 1}${t ? ' · ' + mmss(t.durationMs) : ''}`;
+      all.appendChild(h);
+    }
+    lastTake = seg.takeId;
+    const li = document.createElement('li');
+    li.className = 'sa' + (seg.id === S.selSeg ? ' sel' : '') + (playingId === seg.id ? ' playing' : '');
+    li.innerHTML = `<button class="sa-main"><b></b><span>${mmss(seg.a)}~${mmss(seg.b)} · ${posOf(seg.pid) || '?'}쪽</span></button>
+      <button class="sa-btn" aria-label="이름 바꾸기">✎</button><button class="sa-btn" aria-label="구간 삭제">×</button>`;
+    li.querySelector('b').textContent = segName(seg, i + 1);
+    const [bMain, bEdit, bDel] = li.querySelectorAll('button');
+    bMain.onclick = () => selectSeg(seg, true);
+    bEdit.onclick = () => renameSeg(seg);
+    bDel.onclick = () => deleteSegment(seg);
+    all.appendChild(li);
+  });
+
+  renderTimeline(); renderRecLine(); renderStrip();
+}
+
+function selectSeg(seg, go) {
+  S.selSeg = seg.id;
+  refreshSegments();
+  if (go) jumpTo(seg);
+}
+async function jumpTo(seg) {
+  if (S.session) return toast('녹음 중에는 재생할 수 없습니다. 녹음을 끝낸 뒤 눌러 주세요.');
+  const pos = posOf(seg.pid);
+  if (pos && pos !== S.page) await goTo(pos);
+  placeCaret(seg.noteAt);
+  playSeg(seg);
+}
+function renameSeg(seg) {
+  const v = prompt('구간 이름을 입력하세요 (비우면 기본 이름)', seg.label || '');
+  if (v === null) return;
+  seg.label = v.trim().slice(0, 40); touch(); refreshSegments();
+}
+async function dropTake(id) {
+  await idb.del('blobs', id);
+  if (takeUrls.has(id)) { URL.revokeObjectURL(takeUrls.get(id)); takeUrls.delete(id); }
+  if (player.dataset.take === id) { player.removeAttribute('src'); delete player.dataset.take; }
+  S.note.takes = S.note.takes.filter(t => t.id !== id);
+  S.note.captions.forEach(c => { if (c.takeId === id) { c.takeId = null; c.takeMs = 0; } });
+}
+async function deleteSegment(seg) {
+  const lastOne = !S.note.segments.some(s => s !== seg && s.takeId === seg.takeId);
+  const msg = lastOne ? '이 구간을 지울까요? 이 녹음에 다른 구간이 없어 전체 녹음 파일도 함께 지워집니다.'
+                      : '이 구간을 지울까요? (같은 전체 녹음의 다른 구간은 그대로 남습니다)';
+  if (!confirm(msg)) return;
+  if (playingId === seg.id) stopPlay(false);
+  S.note.segments = S.note.segments.filter(s => s !== seg);
+  if (S.lastKept === seg) S.lastKept = null;
+  if (S.selSeg === seg.id) S.selSeg = null;
+  if (lastOne && !(S.take && S.take.id === seg.takeId)) await dropTake(seg.takeId);
+  touch(); refreshSegments(); renderCaps();
+}
+
+/* ── 재생: 전체 녹음 파일에서 [시작, 끝] 만큼만 ───────────────── */
+const player = new Audio(); player.preload = 'auto';
+const takeUrls = new Map(), scanned = new Set();
+let playToken = 0, playInfo = null, playTimer = 0;
+
+const once = (el, ev, ms = 4000) => new Promise(res => {
+  let t; const f = () => { clearTimeout(t); el.removeEventListener(ev, f); res(true); };
+  el.addEventListener(ev, f); t = setTimeout(() => { el.removeEventListener(ev, f); res(false); }, ms);
+});
+async function takeUrl(take) {
+  if (!takeUrls.has(take.id)) {
+    const b = await idb.get('blobs', take.id); if (!b) return null;
+    takeUrls.set(take.id, URL.createObjectURL(b));
+  }
+  return takeUrls.get(take.id);
+}
+async function loadTake(take) {
+  const url = await takeUrl(take); if (!url) return false;
+  if (player.dataset.take !== take.id) {
+    player.src = url; player.dataset.take = take.id;
+    await once(player, 'loadedmetadata');
+  }
+  if (!scanned.has(take.id)) {
+    scanned.add(take.id);
+    if (!isFinite(player.duration)) {          // 녹음 파일에 길이 정보가 없을 때: 한 번 끝까지 훑어 길이를 알아내야 앞뒤로 옮길 수 있음
+      player.currentTime = 1e101;
+      await once(player, 'timeupdate', 5000);
+      player.currentTime = 0;
+      await once(player, 'seeked', 2000);
+    }
+  }
+  return true;
+}
+async function playRange(take, a, b, segId = null) {
+  if (S.session) return toast('녹음 중에는 재생할 수 없습니다. 녹음을 끝낸 뒤 눌러 주세요.');
+  stopPlay(false);
+  const token = ++playToken;
+  playingId = segId; if (segId) S.selSeg = segId;
+  refreshSegments();
+  const ok = await loadTake(take);
+  if (token !== playToken) return;
+  if (!ok) { toast('녹음 파일을 찾지 못했습니다'); playingId = null; refreshSegments(); return; }
+  player.currentTime = a / 1000;
+  await once(player, 'seeked', 3000);
+  if (token !== playToken) return;
+  try { await player.play(); } catch { if (token === playToken) stopPlay(); return; }
+  if (token !== playToken) return;
+  playInfo = { take, a, b };
+  clearInterval(playTimer); playTimer = setInterval(tickPlay, 40);
+}
+function playSeg(seg) {
+  const take = takeById(seg.takeId);
+  if (!take) return toast('이 구간의 녹음 파일을 찾지 못했습니다');
+  return playRange(take, seg.a, seg.b, seg.id);
+}
+function playCaption(c) {
+  const take = c.takeId && takeById(c.takeId); if (!take) return;
+  const seg = sortedSegs().find(s => s.takeId === take.id && c.takeMs >= s.a && c.takeMs < s.b);
+  playRange(take, c.takeMs, seg ? seg.b : Math.min(take.durationMs, c.takeMs + 30000), seg?.id || null);
+}
+function tickPlay() {
+  if (!playInfo) return;
+  const ms = player.currentTime * 1000;
+  if (ms >= playInfo.b - 20 || player.ended) return stopPlay();
+  updateHead(ms);
+}
+player.onended = () => { if (playInfo) stopPlay(); };
+function stopPlay(redraw = true) {
+  playToken++;
+  try { player.pause(); } catch {}
+  playInfo = null; playingId = null; clearInterval(playTimer);
+  $('tlHead').style.display = 'none';
+  if (redraw) refreshSegments();
+}
+function updateHead(ms) {
+  const h = $('tlHead');
+  if (!tlSel || !playInfo || playInfo.take.id !== tlSel.take.id) { h.style.display = 'none'; return; }
+  h.style.display = 'block'; h.style.left = (ms / tlSel.total * 100) + '%';
+}
+
+/* ── 하단 타임라인: 선택한 구간이 들어 있는 "전체 녹음" 전체를 보여 줌 ── */
+let tlSel = null;
+function renderTimeline() {
+  const tl = $('timeline'), segs = sortedSegs();
+  const show = $('recZone').classList.contains('open') && segs.length > 0 && !!S.pdf && !S.session;
+  tl.hidden = !show; tlSel = null;
+  if (!show) return;
+  if (!segs.some(s => s.id === S.selSeg)) S.selSeg = (segs.find(s => s.pid === pidAt()) || segs[0]).id;
+  const sel = segs.find(s => s.id === S.selSeg), take = takeById(sel.takeId);
+  if (!take) { tl.hidden = true; return; }
+  const total = Math.max(take.durationMs, 1), track = $('tlTrack');
+  track.querySelectorAll('.tl-blk').forEach(n => n.remove());
+  segs.forEach((s, i) => {
+    if (s.takeId !== take.id) return;
+    const d = document.createElement('button');
+    d.className = 'tl-blk' + (s.id === S.selSeg ? ' sel' : '');
+    d.style.left = (s.a / total * 100) + '%'; d.style.width = ((s.b - s.a) / total * 100) + '%';
+    d.setAttribute('aria-label', `${segName(s, i + 1)} 선택`); d.title = `${segName(s, i + 1)} · ${posOf(s.pid)}쪽`;
+    d.onclick = () => selectSeg(s, false);
+    track.insertBefore(d, $('tlWin'));
+  });
+  tlSel = { seg: sel, take, total, idx: segs.indexOf(sel) + 1 };
+  $('tlPlay').textContent = playingId === sel.id ? '■' : '▶';
+  placeHandles();
+}
+function placeHandles() {
+  if (!tlSel) return;
+  const { seg, take, total, idx } = tlSel, pct = ms => (ms / total * 100) + '%';
+  $('tlA').style.left = pct(seg.a); $('tlB').style.left = pct(seg.b);
+  $('tlWin').style.left = pct(seg.a); $('tlWin').style.width = ((seg.b - seg.a) / total * 100) + '%';
+  $('tlA').setAttribute('aria-valuenow', Math.round(seg.a / 1000)); $('tlB').setAttribute('aria-valuenow', Math.round(seg.b / 1000));
+  $('tlTime').innerHTML = `${esc(segName(seg, idx))} · ${mmss(seg.a)} ~ ${mmss(seg.b)}<small>전체 녹음 ${mmss(take.durationMs)} 중 · ${posOf(seg.pid) || '?'}쪽</small>`;
+  $('tlReset').hidden = !segChanged(seg);
+}
+function setTrim(which, ms) {
+  if (!tlSel) return;
+  const { seg, take } = tlSel;
+  if (which === 'a') seg.a = Math.round(Math.min(Math.max(0, ms), seg.b - 300));
+  else seg.b = Math.round(Math.max(Math.min(take.durationMs, ms), seg.a + 300));
+  placeHandles();
+}
+function dragHandle(h, which) {
+  h.addEventListener('pointerdown', e => {
+    e.preventDefault(); h.setPointerCapture(e.pointerId);
+    if (playingId) stopPlay(false);
+    const mv = ev => {
+      if (!tlSel) return;
+      const r = $('tlTrack').getBoundingClientRect();
+      setTrim(which, Math.min(Math.max(ev.clientX - r.left, 0), r.width) / r.width * tlSel.total);
+    };
+    const up = () => {
+      h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up);
+      touch(); refreshSegments();
+    };
+    h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up);
+  });
+  h.addEventListener('keydown', e => {            // 키보드: ← → 0.5초, Shift 와 함께 5초
+    if (!tlSel || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault();
+    const step = (e.shiftKey ? 5000 : 500) * (e.key === 'ArrowRight' ? 1 : -1);
+    setTrim(which, (which === 'a' ? tlSel.seg.a : tlSel.seg.b) + step);
+    touch(); refreshSegments();
+  });
+}
+dragHandle($('tlA'), 'a'); dragHandle($('tlB'), 'b');
+$('tlPlay').onclick = () => {
+  if (!tlSel) return;
+  if (playingId === tlSel.seg.id) stopPlay(); else playSeg(tlSel.seg);
+};
+$('tlReset').onclick = () => {
+  if (!tlSel) return;
+  tlSel.seg.a = tlSel.seg.a0; tlSel.seg.b = tlSel.seg.b0;
+  touch(); refreshSegments();
+};
+/* 구간 표시가 없는 빈 곳을 누르면 그 지점부터 이어서 들어 볼 수 있음 */
+$('tlTrack').addEventListener('click', e => {
+  if (!tlSel || e.target.closest('.tl-h, .tl-blk')) return;
+  const r = $('tlTrack').getBoundingClientRect();
+  const ms = Math.min(Math.max(e.clientX - r.left, 0), r.width) / r.width * tlSel.total;
+  playRange(tlSel.take, ms, tlSel.take.durationMs, null);
+});
+
+/* ── 옛 버전(구간마다 파일이 따로 있던 노트)을 새 방식으로 변환 ── */
+function migrateNote(n) {
+  n.takes ||= []; n.captions ||= [];
+  const legacy = n.segments.filter(s => s.parts);
+  if (!legacy.length) return false;
+  const out = n.segments.filter(s => !s.parts);
+  for (const s of legacy) {
+    const full = s.parts.reduce((a, p) => a + p.durationMs, 0);
+    const wa = Math.min(Math.max(s.trimA || 0, 0), full), wb = Math.min(s.trimB ?? full, full);
+    let off = 0, first = true; const made = [];
+    for (const p of s.parts) {
+      const pa = off, pb = off + p.durationMs; off = pb;
+      if (!n.takes.some(t => t.id === p.id))
+        n.takes.push({ id: p.id, startedAt: p.startedAt, durationMs: p.durationMs, mime: p.mime || 'audio/webm', file: p.file, driveId: p.driveId || null });
+      const a = Math.max(wa, pa) - pa, b = Math.min(wb, pb) - pa;
+      if (b - a < 100) continue;
+      made.push({ id: first ? s.id : uid(), pid: s.pid || String(s.page), takeId: p.id, a: Math.round(a), b: Math.round(b),
+                  a0: 0, b0: p.durationMs, startedAt: p.startedAt, noteAt: s.noteAt || 0, label: first ? (s.label || '') : '' });
+      first = false;
+    }
+    if (!made.length) {
+      const p = s.parts[0];
+      made.push({ id: s.id, pid: s.pid || String(s.page), takeId: p.id, a: 0, b: p.durationMs, a0: 0, b0: p.durationMs,
+                  startedAt: p.startedAt, noteAt: s.noteAt || 0, label: s.label || '' });
+    }
+    out.push(...made);
+    n.captions.forEach(c => {                     // 이 구간에 연결돼 있던 자막
+      if (c.segId !== s.id || c.takeId) return;
+      let o = 0;
+      for (const p of s.parts) {
+        if ((c.offsetMs || 0) < o + p.durationMs || p === s.parts[s.parts.length - 1]) { c.takeId = p.id; c.takeMs = Math.max(0, Math.round((c.offsetMs || 0) - o)); break; }
+        o += p.durationMs;
+      }
+    });
+  }
+  n.captions.forEach(c => { c.takeId ??= null; c.takeMs ??= 0; delete c.segId; delete c.offsetMs; });
+  n.segments = out;
+  return true;
+}
+
+
+/* =====================================================================
+   11. 필기 — 페이지별 보관, 글자별 색
+       고른 색·굵기는 "다음에 쓰는 글자"에 계속 적용됩니다 (페이지를 넘겨도 유지).
+   ===================================================================== */
+const notesEl = $('notes');
+const COLORS = [
+  ['#111111', '검정'], ['#E2412F', '빨강'], ['#1F5FD0', '파랑'],
+  ['#1E8A4C', '초록'], ['#E08A00', '주황'], ['#7A3FC4', '보라']
+];
+let curColor = '#111111', curBold = false, savedRange = null;
+
+function syncSwatches() {
+  document.querySelectorAll('.sw').forEach(s => s.setAttribute('aria-pressed', s.dataset.color === curColor));
+  $('boldBtn').setAttribute('aria-pressed', curBold);
+  $('boldBtn').style.background = curBold ? 'var(--ink)' : '#fff';
+  $('boldBtn').style.color = curBold ? '#fff' : 'var(--ink)';
+}
+(function buildColorbar() {
+  const bar = $('colorbar'), first = bar.firstChild;
+  COLORS.forEach(([c, name]) => {
+    const b = document.createElement('button');
+    b.className = 'sw'; b.style.background = c; b.dataset.color = c.toLowerCase();
+    b.setAttribute('aria-label', `${name} 글자`);
+    b.addEventListener('mousedown', e => e.preventDefault());    // 선택 영역 유지
+    b.onclick = () => pickColor(c);
+    bar.insertBefore(b, first);
+  });
+  syncSwatches();
+})();
+
+document.addEventListener('selectionchange', () => {
+  const sel = getSelection();
+  if (sel.rangeCount && notesEl.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
+});
+function restoreRange() {
+  notesEl.focus({ preventScroll: true });
+  if (savedRange && notesEl.contains(savedRange.startContainer) && notesEl.contains(savedRange.endContainer)) {
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(savedRange);
+  }
+}
+function pickColor(c) {
+  curColor = c.toLowerCase(); syncSwatches();
+  if (notesEl.contentEditable !== 'true') return;
+  restoreRange();
+  document.execCommand('styleWithCSS', false, true);
+  document.execCommand('foreColor', false, curColor);
+  onNotesInput();
+}
+$('customColor').oninput = e => pickColor(e.target.value);
+$('boldBtn').addEventListener('mousedown', e => e.preventDefault());
+$('boldBtn').onclick = () => {
+  if (notesEl.contentEditable !== 'true') return;
+  restoreRange(); document.execCommand('bold');
+  curBold = document.queryCommandState('bold'); syncSwatches(); onNotesInput();
+};
+
+/* 글자를 치기 직전에, 커서 위치의 색·굵기가 고른 값과 다르면 맞춰 줌 */
+const rgbOf = hex => { const n = parseInt(hex.slice(1), 16); return `rgb(${n >> 16 & 255},${n >> 8 & 255},${n & 255})`; };
+function ensureTyping() {
+  if (notesEl.contentEditable !== 'true') return;
+  const sel = getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed || !notesEl.contains(sel.anchorNode)) return;
+  document.execCommand('styleWithCSS', false, true);
+  let now = '';
+  try { now = document.queryCommandValue('foreColor').replace(/\s/g, ''); } catch {}
+  if (now !== rgbOf(curColor)) document.execCommand('foreColor', false, curColor);
+  if (document.queryCommandState('bold') !== curBold) document.execCommand('bold');
+}
+notesEl.addEventListener('beforeinput', e => {
+  if (['insertText', 'insertParagraph', 'insertFromPaste'].includes(e.inputType)) ensureTyping();
+});
+notesEl.addEventListener('compositionstart', ensureTyping);     // 한글 입력(조합) 시작 시점
+
+function stashNotes() {
+  if (!S.note || !S.pdf) return;
+  const id = pidAt(); if (!id) return;
+  const html = notesEl.textContent.trim() ? notesEl.innerHTML : '';
+  if (html) S.note.notes[id] = html; else delete S.note.notes[id];
+}
+function onNotesInput() { stashNotes(); touch(); }
+notesEl.addEventListener('input', () => {
+  // 녹음 중 이 페이지에서 처음 쓰는 위치를 "당시 필기 위치"로 기록
+  const info = S.recInfo;
+  if (S.session && info && !info.locked && info.pid === pidAt()) {
+    info.noteAt = Math.max(0, caretOffset() - 1); info.locked = true;
+  }
+  onNotesInput();
+});
+
+const textLength = () => notesEl.textContent.length;
+function caretOffset() {
+  const sel = getSelection();
+  if (!sel.rangeCount || !notesEl.contains(sel.anchorNode)) return textLength();
+  const r = sel.getRangeAt(0), pre = document.createRange();
+  pre.selectNodeContents(notesEl); pre.setEnd(r.startContainer, r.startOffset);
+  return pre.toString().length;
+}
+function rangeAt(off) {
+  const w = document.createTreeWalker(notesEl, NodeFilter.SHOW_TEXT);
+  let n, left = off; const r = document.createRange();
+  while ((n = w.nextNode())) { if (left <= n.length) { r.setStart(n, left); r.collapse(true); return r; } left -= n.length; }
+  r.selectNodeContents(notesEl); r.collapse(false); return r;
+}
+function placeCaret(off) {
+  if (notesEl.contentEditable !== 'true') return;
+  autoFoldBlock = true; setTimeout(() => { autoFoldBlock = false; }, 900);   // 구간 이동 중에는 패널을 접지 않음
+  const probe = document.createElement('span');
+  rangeAt(off).insertNode(probe);
+  probe.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  setTimeout(() => {
+    const host = $('notesWrap').getBoundingClientRect();
+    const pr = probe.getBoundingClientRect();
+    probe.remove(); notesEl.normalize();
+    notesEl.focus({ preventScroll: true });
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rangeAt(off));
+    document.querySelector('.jump-mark')?.remove();
+    const mark = document.createElement('div'); mark.className = 'jump-mark';
+    mark.style.top = Math.max(4, pr.top - host.top - 3) + 'px';
+    $('notesWrap').appendChild(mark);
+    setTimeout(() => mark.remove(), 1900);
+  }, 260);
+}
+
+/* =====================================================================
+   12. 자동 보관 · 제목 · 홈으로
+   ===================================================================== */
+let persistTimer;
+function touch() {
+  if (!S.note) return;
+  S.note.updatedAt = Date.now();
+  clearTimeout(persistTimer); persistTimer = setTimeout(persistNow, 500);
+}
+async function persistNow() { clearTimeout(persistTimer); if (S.note) await idb.put('notes', S.note); }
+
+$('titleInput').oninput = e => { S.note.title = e.target.value.trim(); touch(); };
+$('backBtn').onclick = async () => {
+  if (S.session) await stopSession();
+  setCapOn(false); stopPlay(false); stashNotes(); await persistNow();
+  S.note = null; S.pdf = null; S.selSeg = null;
+  $('liveCap').hidden = true;
+  $('editor').hidden = true; $('home').hidden = false;
+  renderHome();
+};
+
+/* =====================================================================
+   13. 저장 — 내 컴퓨터 폴더 / Google Drive
+   ===================================================================== */
+function renderSaveZone() {
+  const n = S.note; if (!n) return;
+  const drive = n.location.type === 'drive';
+  $('saveWhere').innerHTML = `저장 위치 <b></b>`;
+  $('saveWhere').querySelector('b').textContent = `${drive ? 'Google Drive' : '내 컴퓨터'} › ${n.location.name}`;
+  $('saveBtn').textContent = drive ? 'Google Drive에 저장' : '내 컴퓨터에 저장';
+  const off = drive && !loggedIn();
+  $('saveBtn').disabled = off; $('saveMini').disabled = off;
+  if (off) $('saveLog').textContent = 'Google로 로그인하면 저장할 수 있습니다';
+}
+$('saveMini').onclick = () => $('saveBtn').click();
+$('saveBtn').onclick = async () => {
+  const n = S.note; if (!n) return;
+  $('saveBtn').disabled = true; $('saveMini').disabled = true; $('saveMini').textContent = '저장 중…';
+  try {
+    stashNotes(); await persistNow();
+    $('saveLog').textContent = '저장 중…';
+    if (n.location.type === 'drive') await saveToDrive(n); else await saveToLocal(n);
+    n.savedAt = Date.now(); await persistNow();
+    const loc = await idb.get('locations', n.location.id);
+    if (loc) { loc.usedAt = Date.now(); if (n.location.folderId) loc.folderId = n.location.folderId; await idb.put('locations', loc); }
+    $('saveLog').textContent = `저장됨 ${clock(Date.now())}${S.session ? ' · 진행 중인 녹음은 다음 저장에 포함됩니다' : ''}`;
+    toast('저장했습니다');
+  } catch (e) {
+    $('saveLog').textContent = e.message; toast(e.message);
+  } finally { $('saveMini').textContent = '저장'; renderSaveZone(); }
+};
+
+function buildIndex(n) {
+  const pages = n.pages || [], posIn = pid => posOf(pid, n) || null, iso = t => new Date(t).toISOString();
+  const segs = n.segments.slice().sort((a, b) => a.startedAt - b.startedAt);
+  return {
+    app: 'StudyPDF', version: 3, title: n.title || '제목 없는 노트',
+    folder: folderNames(n),                              // 이 노트가 들어 있는 폴더 경로 (루트 제외)
+    createdAt: iso(n.createdAt), savedAt: new Date().toISOString(),
+    pdf: 'lecture.pdf', pdfPages: S.pdfPages || null, totalPages: pages.length || null,
+    pageMap: pages.map((p, i) => ({ page: i + 1, id: p.id, blank: !!p.blank, pdfPage: p.blank ? null : p.src })),
+    settings: { ...settings },
+    notes: n.notes,                                      // 키 = pageMap 의 id
+    takes: n.takes.map(t => ({ id: t.id, file: 'audio/' + t.file, durationMs: t.durationMs, startedAt: iso(t.startedAt) })),
+    captions: n.captions.slice().sort((a, b) => a.at - b.at).map(c => ({
+      page: posIn(c.pid), pageId: c.pid, at: iso(c.at), lang: c.lang, text: c.text,
+      takeId: c.takeId || null, takeMs: c.takeId ? Math.round(c.takeMs) : null
+    })),
+    segments: segs.map(s => ({                           // 구간 = 전체 녹음(takeId) 위의 [startMs, endMs]
+      id: s.id, page: posIn(s.pid), pageId: s.pid, label: s.label || '',
+      takeId: s.takeId, startMs: s.a, endMs: s.b, originalStartMs: s.a0, originalEndMs: s.b0,
+      startedAt: iso(s.startedAt), noteAt: s.noteAt
+    }))
+  };
+}
+function buildNotesHtml(n) {
+  const pages = n.pages || [];
+  const body = pages.map((p, i) => {
+    const html = n.notes[p.id];
+    const cs = n.captions.filter(c => c.pid === p.id).sort((a, b) => a.at - b.at);
+    if (!html && !cs.length) return '';
+    return `<h2>${i + 1}쪽${p.blank ? ' (빈 페이지)' : ''}</h2>` +
+      (html ? `<div>${html}</div>` : '') +
+      (cs.length ? `<h3>자막</h3><ul>${cs.map(c => `<li>${esc(c.text)}</li>`).join('')}</ul>` : '');
+  }).filter(Boolean).join('\n');
+  return `<!DOCTYPE html><html lang="ko"><meta charset="utf-8"><title>${esc(n.title || '노트')}</title>
+<body style="font-family:Pretendard,sans-serif;max-width:760px;margin:40px auto;line-height:1.7">
+<h1>${esc(n.title || '제목 없는 노트')}</h1>
+${body}
+</body></html>`;
+}
+
+
+/* 13-1. 내 컴퓨터 — 고른 폴더 안에 "트리와 같은 이름의 폴더"를 만들고 그 안에 노트 폴더를 저장 */
+async function writeFile(dir, name, data) {
+  const fh = await dir.getFileHandle(name, { create: true });
+  const w = await fh.createWritable(); await w.write(data); await w.close();
+}
+async function sameSize(dir, name, size) {            // 이미 같은 크기의 파일이 있으면 다시 쓰지 않음 (긴 녹음 절약)
+  try { return (await (await dir.getFileHandle(name)).getFile()).size === size; } catch { return false; }
+}
+async function saveToLocal(n) {
+  const h = n.location.handle;
+  if (!h) return downloadZip(n);
+  if ((await h.queryPermission({ mode: 'readwrite' })) !== 'granted' &&
+      (await h.requestPermission({ mode: 'readwrite' })) !== 'granted')
+    throw new Error('폴더에 쓰기 권한이 필요합니다. 다시 저장을 눌러 허용해 주세요.');
+  let parent = h;
+  for (const nm of folderNames(n)) parent = await parent.getDirectoryHandle(safeName(nm), { create: true });
+  const dir = await parent.getDirectoryHandle(safeName(n.title), { create: true });
+  const pdf = await idb.get('blobs', 'pdf:' + n.id);
+  if (pdf && !(await sameSize(dir, 'lecture.pdf', pdf.size))) await writeFile(dir, 'lecture.pdf', pdf);
+  const audio = await dir.getDirectoryHandle('audio', { create: true });
+  const takes = n.takes || [];
+  for (let i = 0; i < takes.length; i++) {
+    $('saveLog').textContent = `녹음 저장 중 ${i + 1}/${takes.length}`;
+    const b = await idb.get('blobs', takes[i].id);
+    if (b && !(await sameSize(audio, takes[i].file, b.size))) await writeFile(audio, takes[i].file, b);
+  }
+  await writeFile(dir, 'index.json', JSON.stringify(buildIndex(n), null, 2));
+  await writeFile(dir, 'notes.html', buildNotesHtml(n));
+}
+async function downloadZip(n) {
+  if (!window.JSZip) await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.onload = res; s.onerror = () => rej(new Error('압축 도구를 불러오지 못했습니다'));
+    document.head.appendChild(s);
+  });
+  const zip = new JSZip();
+  let root = zip;
+  for (const nm of folderNames(n)) root = root.folder(safeName(nm));
+  root = root.folder(safeName(n.title));
+  const pdf = await idb.get('blobs', 'pdf:' + n.id); if (pdf) root.file('lecture.pdf', pdf);
+  for (const t of n.takes || []) {
+    const b = await idb.get('blobs', t.id); if (b) root.file('audio/' + t.file, b);
+  }
+  root.file('index.json', JSON.stringify(buildIndex(n), null, 2));
+  root.file('notes.html', buildNotesHtml(n));
+  const out = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(out);
+  a.download = safeName(n.title) + '.zip'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+/* 13-2. Google Drive — 트리와 같은 이름의 폴더를 드라이브에 만들고, 폴더를 옮기면 드라이브에서도 옮김 */
+const DRIVE = 'https://www.googleapis.com/drive/v3/files';
+const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+async function gjson(url, opt = {}) {
+  const r = await fetch(url, { ...opt, headers: { ...(opt.headers || {}), Authorization: `Bearer ${auth.token}` } });
+  if (r.status === 401) { await expireAuth(); throw new Error('로그인이 만료되었습니다. 다시 로그인한 뒤 저장해 주세요.'); }
+  if (!r.ok) { const e = new Error(`Google Drive 오류 (${r.status})`); e.status = r.status; throw e; }
+  return r.json();
+}
+async function dCreate(name, parent, blob, mime) {
+  const meta = { name, parents: [parent] };
+  if (!blob) {
+    meta.mimeType = 'application/vnd.google-apps.folder';
+    return (await gjson(`${DRIVE}?fields=id`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(meta) })).id;
+  }
+  meta.mimeType = mime;
+  const f = new FormData();
+  f.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+  f.append('file', blob);
+  return (await gjson(`${UPLOAD}?uploadType=multipart&fields=id`, { method: 'POST', body: f })).id;
+}
+async function dUpsert(id, name, parent, blob, mime) {
+  if (id) {
+    try {
+      await gjson(`${UPLOAD}/${id}?uploadType=media&fields=id`, { method: 'PATCH', headers: { 'Content-Type': mime }, body: blob });
+      return id;
+    } catch (e) { if (e.status !== 404) throw e; }
+  }
+  return dCreate(name, parent, blob, mime);
+}
+async function dFolder(name, parent) {
+  const q = `name='${name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parent}' in parents`;
+  const r = await gjson(`${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id)&spaces=drive`);
+  return r.files[0]?.id || dCreate(name, parent);
+}
+async function saveToDrive(n) {
+  if (!loggedIn()) throw new Error('Google로 로그인한 뒤 저장해 주세요.');
+  n.location.folderId ||= await dFolder(n.location.name, 'root');
+  let parent = n.location.folderId;
+  for (const nm of folderNames(n)) parent = await dFolder(safeName(nm), parent);     // 폴더 트리 그대로 만들기
+  const title = safeName(n.title);
+
+  if (n.drive.folderId) {                       // 사용자가 드라이브에서 지웠는지 확인
+    try {
+      const f = await gjson(`${DRIVE}/${n.drive.folderId}?fields=id,trashed,name,parents`);
+      if (f.trashed) n.drive = {};
+      else {
+        const patch = q => gjson(`${DRIVE}/${n.drive.folderId}${q}`,
+          { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(q.includes('addParents') ? {} : { name: title }) });
+        if (!(f.parents || []).includes(parent)) {                                    // 노트를 다른 폴더로 옮겼으면 드라이브에서도 이동
+          const rm = (f.parents || []).join(',');
+          await patch(`?addParents=${parent}${rm ? '&removeParents=' + rm : ''}&fields=id`);
+        }
+        if (f.name !== title) await patch('?fields=id');
+      }
+    } catch (e) { if (e.status === 404) n.drive = {}; else throw e; }
+  }
+  if (!n.drive.folderId) {
+    n.drive = { folderId: await dCreate(title, parent) };
+    (n.takes || []).forEach(t => { t.driveId = null; });
+  }
+  const folder = n.drive.folderId;
+
+  if (!n.drive.pdfId) {
+    const pdf = await idb.get('blobs', 'pdf:' + n.id);
+    if (pdf) { $('saveLog').textContent = 'PDF 올리는 중…'; n.drive.pdfId = await dCreate('lecture.pdf', folder, pdf, 'application/pdf'); }
+  }
+  const todo = (n.takes || []).filter(t => !t.driveId);
+  if (todo.length) {
+    n.drive.audioId ||= await dCreate('audio', folder);
+    for (let i = 0; i < todo.length; i++) {
+      $('saveLog').textContent = `녹음 올리는 중 ${i + 1}/${todo.length}`;
+      const b = await idb.get('blobs', todo[i].id);
+      if (b) todo[i].driveId = await dCreate(todo[i].file, n.drive.audioId, b, b.type || todo[i].mime || 'audio/webm');
+      await persistNow();
+    }
+  }
+  $('saveLog').textContent = '필기 올리는 중…';
+  n.drive.indexId = await dUpsert(n.drive.indexId, 'index.json', folder,
+    new Blob([JSON.stringify(buildIndex(n), null, 2)], { type: 'application/json' }), 'application/json');
+  n.drive.notesId = await dUpsert(n.drive.notesId, 'notes.html', folder,
+    new Blob([buildNotesHtml(n)], { type: 'text/html' }), 'text/html');
+}
+
+/* =====================================================================
+   14. 시작
+   ===================================================================== */
+(async function init() {
+  sortMode = (await idb.get('kv', 'sort')) || 'created';
+  await loadSettings();
+  await loadAuth();
+  await loadHomeState();
+  Object.assign(layout, (await idb.get('kv', 'layout')) || {});
+  applyLayout();
+  const cp = (await idb.get('kv', 'cap')) || {};
+  cap.save = cp.save ?? true; cap.lang = cp.lang || 'ko-KR';
+  syncCapUI();
+  S.view = (await idb.get('kv', 'view')) || 'page';
+  initSplitters();
+  await renderHome();
+})();
+</script>
+</body>
+</html>
